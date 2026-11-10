@@ -2091,19 +2091,19 @@ def _repair_dxf_text(text):
 
 
 def read_dxf(path):
-    """Читает DXF, при необходимости правя «сырые» переводы строк.
+    """Читает DXF с правильной кодировкой и починкой битых значений.
 
-    Сначала пробуем ezdxf.readfile() — он сам определяет кодировку по
-    версии DXF (R2007+ — UTF-8, старые — $DWGCODEPAGE). Если файл битый
-    (экспорт Schemagee с переводом строки внутри значения) и починка
-    что-то изменила — разбираем исправленный текст.
+    Кодировка определяется по заголовку (`_dxf_encoding`): R2007+ — UTF-8,
+    старые DXF — ANSI-страница, по умолчанию cp1251. ezdxf.readfile() для
+    этого не годится: Schemagee пишет R12 (AC1009) без $DWGCODEPAGE, и
+    ezdxf молча берёт cp1252 — кириллица превращается в мусор.
     """
+    encoding = _dxf_encoding(path)
+    with open(path, encoding=encoding, errors='replace') as fp:
+        text = fp.read()
     try:
-        return ezdxf.readfile(path)
+        return ezdxf.read(io.StringIO(text))
     except Exception as e:
-        encoding = _dxf_encoding(path)
-        with open(path, encoding=encoding, errors='replace') as fp:
-            text = fp.read()
         fixed_text, fixed = _repair_dxf_text(text)
         if not fixed:
             raise
@@ -2846,7 +2846,7 @@ def run_gui():
     root.resizable(False, False)
     root.configure(bg=WIN11_BG)
     apply_icon(root)
-    _center(root, 720, 520)
+    _center(root, 720, 580)
 
     def _report_callback_exception(exc_type, exc_value, exc_tb):
         log("Ошибка в обработчике интерфейса:\n"
@@ -2854,7 +2854,7 @@ def run_gui():
 
     root.report_callback_exception = _report_callback_exception
 
-    card = _card(root, 640, 430)
+    card = _card(root, 640, 490)
     ui_queue = queue.Queue()
 
     def emit(kind, payload=None):
@@ -2952,6 +2952,12 @@ def run_gui():
         start_work(path, manual_count)
 
     _button(card, "Выбрать файл", on_select).pack(pady=(16, 0))
+    tk.Label(card, text=f"Если ПО зависло — нажмите {STOP_HOTKEY.upper()}",
+             font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
+             justify="center").pack(pady=(14, 0))
+    tk.Label(card, text="экстренная остановка, работает всегда",
+             font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+             fg=WIN11_SUBTEXT).pack()
     tk.Label(card, text=APP_VERSION, font=FONT_VERSION,
              bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="bottom", pady=(0, 10))
 
