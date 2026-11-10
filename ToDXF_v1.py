@@ -44,7 +44,7 @@ import time
 import traceback
 
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, ttk
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -448,6 +448,7 @@ KEY_SETTLE = 0.35             # пауза после одиночной ком�
 SAVE_DIALOG_TIMEOUT = 8.0     # ожидание диалога "Сохранение"
 FILE_APPEAR_TIMEOUT = 25.0    # ожидание появления DXF на диске
 SHEET_ATTEMPTS = 3            # попыток сохранить один лист
+MAX_RECOVERIES = 3            # перезапусков Schemagee на один файл
 SHEET_OPEN_PAUSE = 1.5        # после появления окна Schemagee (отрисовка)
 SHEET_RETRY_PAUSE = 0.8       # между попытками одного листа
 SHEET_NEXT_PAUSE = 0.3        # перед Page Down
@@ -1642,6 +1643,78 @@ def close_schemagee(timeout=8.0):
     return False
 
 
+def window_responsive(hwnd, timeout_ms=1200):
+    """Окно отвечает на WM_NULL — значит не зависло."""
+    if not hwnd:
+        return False
+    try:
+        result = ctypes.windll.user32.SendMessageTimeoutW(
+            hwnd, 0x0000, 0, 0, 0x0002, int(timeout_ms), None)
+        return bool(result)
+    except Exception:
+        return False
+
+
+def schemagee_hung(main_hwnd=None):
+    """True, если окно Schemagee не отвечает на сообщения."""
+    hwnd = main_hwnd or find_schemagee_window()[0]
+    if not hwnd:
+        return False
+    try:
+        if ctypes.windll.user32.IsHungAppWindow(hwnd):
+            return True
+    except Exception:
+        pass
+    return not window_responsive(hwnd)
+
+
+def kill_schemagee():
+    """Принудительно завершает зависший Schemagee."""
+    hwnd, title = find_schemagee_window()
+    if not hwnd:
+        return True
+    pid = window_pid(hwnd)
+    log(f"  Schemagee не отвечает — завершаем процесс {pid}.")
+    try:
+        subprocess.run(["taskkill", "/PID", str(pid), "/F", "/T"],
+                       capture_output=True, timeout=10)
+    except Exception as e:
+        log(f"  taskkill: {e}")
+    end = time.time() + 8.0
+    while time.time() < end:
+        if not find_schemagee_window()[0]:
+            log("  Schemagee завершён.")
+            return True
+        time.sleep(0.2)
+    log("  ВНИМАНИЕ: Schemagee всё ещё в памяти.")
+    return False
+
+
+def reopen_schemagee(path, sheet_num):
+    """Перезапускает Schemagee после зависания и переходит на нужный лист."""
+    log(f"  Перезапуск Schemagee (нужен лист {sheet_num})…")
+    kill_schemagee()
+    pause(1.0)
+    if not open_file_in_schemagee(path):
+        return 0
+    hwnd, title = wait_schemagee_window(timeout=30.0)
+    if not hwnd:
+        log("  Окно Schemagee не появилось после перезапуска.")
+        return 0
+    wait_window_ready(hwnd, timeout=10.0)
+    ensure_foreground(hwnd, what="Schemagee")
+    switch_to_english(hwnd)
+    pause(SHEET_OPEN_PAUSE)
+    for _ in range(max(0, sheet_num - 1)):
+        check_stop()
+        ensure_schemagee_active(hwnd, what="Schemagee")
+        keyboard.send('page down')
+        pause(PAGE_TURN_PAUSE)
+    _OWNED_SCHEMAGEE["opened"] = True
+    log("  Schemagee перезапущен.")
+    return hwnd
+
+
 def log_recent_files(folder, since, limit=6):
     """Пишет в лог файлы, появившиеся в папке за время попытки.
 
@@ -1770,6 +1843,7 @@ def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None)
 
     produced = []
     missing = []
+    recoveries = 0
 
     for sheet_num in range(1, sheet_count + 1):
         check_stop()
@@ -1794,6 +1868,19 @@ def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None)
         for attempt in range(1, SHEET_ATTEMPTS + 1):
             check_stop()
             log(f"  Попытка {attempt}/{SHEET_ATTEMPTS}.")
+            # Schemagee мог не получить команду и зависнуть: не ждём
+            # бесконечно — перезапускаем его и повторяем лист.
+            if schemagee_hung(hwnd):
+                if recoveries >= MAX_RECOVERIES:
+                    raise RuntimeError(
+                        "Schemagee зависает и не восстанавливается.\n\n"
+                        "Закройте его вручную и повторите запуск.")
+                recoveries += 1
+                log("  Schemagee не отвечает — перезапускаем и повторяем лист.")
+                hwnd = reopen_schemagee(original_file_path, sheet_num)
+                if not hwnd:
+                    raise RuntimeError(
+                        "Не удалось перезапустить Schemagee после зависания.")
             # Застрявшее модальное окно Schemagee перекрывает главное — от
             # него сначала избавляемся, иначе Shift+D уйдёт в него.
             close_schemagee_popup(hwnd, timeout=2.0, look=0.3)
@@ -2048,6 +2135,22 @@ FONT_FILE = 'isocpeui.ttf'
 PAPER_W = 594.0
 PAPER_H = 420.0
 MARGIN = 5.0
+
+# Форматы листов (мм) — альбомная ориентация. По умолчанию A2.
+PAPER_FORMATS = {
+    'A2': (594.0, 420.0),
+    'A3': (420.0, 297.0),
+    'A4': (297.0, 210.0),
+}
+PAPER_FORMAT_DEFAULT = 'A2'
+
+
+def paper_size(fmt=PAPER_FORMAT_DEFAULT, landscape=True):
+    """Размер листа (ширина, высота) в мм с учётом ориентации."""
+    width, height = PAPER_FORMATS.get(fmt, PAPER_FORMATS[PAPER_FORMAT_DEFAULT])
+    if not landscape:
+        width, height = height, width
+    return width, height
 GAP = 10.0
 
 
@@ -2374,7 +2477,8 @@ def compress_texts(doc, factor=TEXT_COMPRESS):
     return changed, stats
 
 
-def create_layout_for(master, layout_name, item):
+def create_layout_for(master, layout_name, item,
+                      paper_w=PAPER_W, paper_h=PAPER_H):
     """Создаёт Layout с viewport, показывающим одну схему из модели."""
     try:
         layout = master.layouts.new(layout_name)
@@ -2382,9 +2486,9 @@ def create_layout_for(master, layout_name, item):
         log(f"ВНИМАНИЕ: Layout '{layout_name}' не создан: {e}")
         return None
 
-    # Формат листа — A2 landscape
+    # Формат листа задаётся параметрами (A2 по умолчанию, A3/A4 — по выбору)
     layout.page_setup(
-        size=(PAPER_W, PAPER_H),
+        size=(paper_w, paper_h),
         margins=(MARGIN, MARGIN, MARGIN, MARGIN),
         units='mm',
     )
@@ -2393,14 +2497,14 @@ def create_layout_for(master, layout_name, item):
     w = x1 - x0
     h = y1 - y0
 
-    usable_w = PAPER_W - 2 * MARGIN
-    usable_h = PAPER_H - 2 * MARGIN
+    usable_w = paper_w - 2 * MARGIN
+    usable_h = paper_h - 2 * MARGIN
 
     # Масштаб: во сколько раз уменьшить модель, чтобы схема влезла в лист
     scale = min(usable_w / w, usable_h / h)
 
     view_center = ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
-    vp_center = (PAPER_W / 2.0, PAPER_H / 2.0)
+    vp_center = (paper_w / 2.0, paper_h / 2.0)
     vp_size = (usable_w, usable_h)
     view_height = usable_h / scale    # видимая высота модели в единицах чертежа
 
@@ -2472,13 +2576,14 @@ def export_dwg(dxf_path, dwg_path, keep_dxf=False, attempts=3, delay=5.0):
 
 
 def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
-              delete_sources=False):
+              delete_sources=False, paper_w=PAPER_W, paper_h=PAPER_H):
     """Собирает альбом из DXF: схемы в ряд в модели + layout на каждый лист.
 
     input_dir      — папка с DXF (имя файла содержит 'листN');
     output_dir     — папка результата (<ИМЯ>.dwg, placed.json);
     name           — имя итогового файла без расширения;
-    delete_sources — удалить входные DXF листов после успешной сборки DWG.
+    delete_sources — удалить входные DXF листов после успешной сборки DWG;
+    paper_w/h      — размер листа в мм (A2 по умолчанию, A3/A4 — по выбору).
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -2509,6 +2614,7 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
         raise RuntimeError(f"В папке нет DXF-файлов: {input_dir}")
 
     master = ezdxf.new('R2018', setup=True)
+    log(f"Формат листа: {paper_w:g}×{paper_h:g} мм")
 
     # Дефолтный Layout1 удалить СРАЗУ нельзя: ezdxf запрещает удалять последний
     # paperspace-layout. Поэтому чистим дефолтные листы после создания
@@ -2582,7 +2688,8 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
         if sn is None:
             sn = idx
         layout_name = f"Лист {sn}"
-        layout = create_layout_for(master, layout_name, item)
+        layout = create_layout_for(master, layout_name, item,
+                                   paper_w=paper_w, paper_h=paper_h)
         if layout is not None:
             log(f"  '{layout_name}'  ←  {file_name}")
         item['layout'] = layout_name
@@ -2648,7 +2755,8 @@ def write_result_json(run_dir, payload):
         log(f"Не удалось записать result.json: {e}")
 
 
-def run_pipeline(file_path, manual_count, emit, delete_dxf=True):
+def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
+                 paper_w=PAPER_W, paper_h=PAPER_H):
     """Полный цикл: открыть .sdd, сохранить листы, собрать DWG, отдать отчёт."""
     check_stop()
     _OWNED_SCHEMAGEE["opened"] = False
@@ -2768,7 +2876,8 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True):
     emit("progress", "Собираем альбом и конвертируем в DWG…")
     t_merge = time.time()
     merge = merge_all(input_dir=run_dir, output_dir=run_dir, name=name,
-                      delete_sources=delete_dxf)
+                      delete_sources=delete_dxf,
+                      paper_w=paper_w, paper_h=paper_h)
     merge_time = time.time() - t_merge
 
     target = merge["file"]
@@ -2906,7 +3015,7 @@ def run_gui():
     root.resizable(False, False)
     root.configure(bg=WIN11_BG)
     apply_icon(root)
-    _center(root, 720, 700)
+    _center(root, 720, 820)
 
     def _report_callback_exception(exc_type, exc_value, exc_tb):
         log("Ошибка в обработчике интерфейса:\n"
@@ -2914,7 +3023,7 @@ def run_gui():
 
     root.report_callback_exception = _report_callback_exception
 
-    card = _card(root, 640, 610)
+    card = _card(root, 640, 730)
     ui_queue = queue.Queue()
 
     def emit(kind, payload=None):
@@ -2940,6 +3049,10 @@ def run_gui():
     hint_var = tk.StringVar(value="")
     delete_var = tk.BooleanVar(value=True)   # удалять DXF после конвертации
     report_var = tk.BooleanVar(value=True)   # показывать отчёт по завершении
+    format_var = tk.BooleanVar(value=False)  # выбрать формат листа вручную
+    format_value = tk.StringVar(value="A3")  # формат при ручном выборе
+    orient_value = tk.StringVar(value="горизонтальный")
+    files_var = tk.StringVar(value="Файлы не выбраны")
 
     def on_toggle():
         if manual_var.get():
@@ -2965,20 +3078,19 @@ def run_gui():
     manual_row = tk.Frame(card, bg=WIN11_CARD_BG)
     manual_row.pack(pady=(0, 2))
     tk.Checkbutton(
-        manual_row, text="Выбрать настройки вручную", variable=manual_var,
-        command=on_toggle, font=FONT_BODY, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
+        manual_row, text="Указать количество листов вручную",
+        variable=manual_var, command=on_toggle, font=FONT_BODY,
+        bg=WIN11_CARD_BG, fg=WIN11_TEXT,
         activebackground=WIN11_CARD_BG, activeforeground=WIN11_TEXT,
         selectcolor=WIN11_CARD_BG, bd=0, highlightthickness=0,
         cursor="hand2",
     ).pack(side="left")
-    tk.Label(manual_row, text="Число листов:", font=FONT_BODY,
-             bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(side="left", padx=(18, 6))
     spin = tk.Spinbox(
         manual_row, from_=1, to=500, width=5, font=FONT_BODY,
         textvariable=count_var, state="disabled", justify="center",
         relief="solid", bd=1,
     )
-    spin.pack(side="left")
+    spin.pack(side="left", padx=(8, 0))
 
     tk.Label(card, textvariable=hint_var, font=FONT_BODY_SM,
              bg=WIN11_CARD_BG, fg=WIN11_DANGER).pack(pady=(2, 0))
@@ -2995,82 +3107,136 @@ def run_gui():
         return True, int(raw)
 
     def on_select():
-        ok, manual_count = read_manual_count()
-        if not ok:
-            return
-
         # Стартуем всегда с локальной папки (Рабочий стол): если открывать
         # диалог на сетевом пути, Windows ждёт ответа сервера и окно висит.
         initial = choose_start_dir()
-        log(f"Диалог выбора файла: стартовая папка {initial}")
+        log(f"Диалог выбора файлов: стартовая папка {initial}")
 
-        path = filedialog.askopenfilename(
+        paths = filedialog.askopenfilenames(
             parent=root,
-            title="Выберите файл Schemagee",
+            title="Выберите файлы Schemagee",
             filetypes=[("Schemagee", "*.sdd"), ("Все файлы", "*.*")],
             initialdir=initial,
         )
-        if not path:
-            return
-        path = os.path.normpath(path)
-        remember_dir(path)
-        log(f"Выбран файл: {path} "
-            f"(листов: {manual_count if manual_count else 'авто'})")
-        start_work([path], manual_count)
+        if paths:
+            add_files(paths)
 
     def on_drop(event):
         try:
             paths = root.tk.splitlist(event.data)
         except Exception:
             paths = [event.data]
-        files = [os.path.normpath(str(p)) for p in paths
-                 if str(p).lower().endswith(".sdd")]
+        files = [str(p) for p in paths if str(p).lower().endswith(".sdd")]
         if not files:
             log("Перетаскивание: файлов .sdd не найдено.")
             hint_var.set("Перетащите файлы Schemagee (.sdd).")
             return
-        ok, manual_count = read_manual_count()
-        if not ok:
-            return
-        remember_dir(files[0])
-        log(f"Перетащено файлов: {len(files)} "
-            f"(листов: {manual_count if manual_count else 'авто'})")
-        start_work(files, manual_count)
+        add_files(files)
 
     drop_frame = tk.Frame(card, bg=WIN11_BG, highlightthickness=1,
                           highlightbackground=WIN11_BORDER)
-    drop_frame.pack(fill="x", padx=34, pady=(14, 0))
-    drop_hint = ("Перетащите файлы .sdd сюда (можно несколько)"
-                 if HAS_DND else "Drag & drop недоступен")
-    drop_label = tk.Label(drop_frame, text=drop_hint, font=FONT_BODY_SM,
+    drop_frame.pack(fill="x", padx=34, pady=(12, 0))
+    drop_hint = ("Перетащите сюда файлы .sdd" if HAS_DND
+                 else "Drag & drop недоступен")
+    drop_label = tk.Label(drop_frame, text=drop_hint, font=FONT_BODY,
                           bg=WIN11_BG, fg=WIN11_SUBTEXT, justify="center")
-    drop_label.pack(padx=12, pady=14)
+    drop_label.pack(padx=12, pady=21)
     if HAS_DND:
         for widget in (drop_frame, drop_label):
             widget.drop_target_register(DND_FILES)
             widget.dnd_bind("<<Drop>>", on_drop)
 
-    _button(card, "Выбрать файл", on_select).pack(pady=(14, 0))
+    tk.Label(card, textvariable=files_var, font=FONT_BODY_SM,
+             bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT, wraplength=560,
+             justify="center").pack(pady=(8, 0))
+
+    pending = []
+
+    def refresh_pending():
+        if pending:
+            names = [os.path.basename(p) for p in pending]
+            shown = ", ".join(names[:3])
+            extra = f" и ещё {len(names) - 3}" if len(names) > 3 else ""
+            files_var.set(f"Выбрано файлов: {len(pending)} — {shown}{extra}")
+            convert_btn.config(state="normal")
+        else:
+            files_var.set("Файлы не выбраны")
+            convert_btn.config(state="disabled")
+
+    def add_files(paths):
+        added = 0
+        for path in paths:
+            path = os.path.normpath(str(path))
+            if not path.lower().endswith(".sdd") or not os.path.isfile(path):
+                continue
+            if path not in pending:
+                pending.append(path)
+                added += 1
+        if added:
+            remember_dir(pending[-1])
+            log(f"Добавлено файлов: {added}, всего {len(pending)}")
+        refresh_pending()
+
+    def on_convert():
+        ok, manual_count = read_manual_count()
+        if not ok or not pending:
+            return
+        paths = list(pending)
+        pending.clear()
+        refresh_pending()
+        start_work(paths, manual_count)
+
+    buttons = tk.Frame(card, bg=WIN11_CARD_BG)
+    buttons.pack(pady=(10, 0))
+    _button(buttons, "Выбрать файл", on_select).pack(side="left", padx=(0, 10))
+    convert_btn = _button(buttons, "Конвертировать", on_convert,
+                          primary=False)
+    convert_btn.pack(side="left")
+    refresh_pending()
+
+    def on_toggle_format():
+        state = "readonly" if format_var.get() else "disabled"
+        format_combo.config(state=state)
+        orient_combo.config(state=state)
+
+    def paper_dimensions():
+        if not format_var.get():
+            return PAPER_W, PAPER_H
+        fmt = format_value.get() or PAPER_FORMAT_DEFAULT
+        landscape = orient_value.get() != "вертикальный"
+        return paper_size(fmt, landscape)
 
     opts = tk.Frame(card, bg=WIN11_CARD_BG)
     opts.pack(pady=(10, 0))
     for opt_text, opt_var in (
         ("Удалять .dxf файлы после конвертации", delete_var),
         ("Выводить отчёт о конвертации по завершении", report_var),
+        ("Выбрать формат листа вручную", format_var),
     ):
+        command = on_toggle_format if opt_var is format_var else None
         tk.Checkbutton(opts, text=opt_text, variable=opt_var,
-                       font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
-                       activebackground=WIN11_CARD_BG,
+                       command=command, font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+                       fg=WIN11_TEXT, activebackground=WIN11_CARD_BG,
                        activeforeground=WIN11_TEXT, selectcolor=WIN11_CARD_BG,
                        bd=0, highlightthickness=0,
                        cursor="hand2").pack(anchor="w")
 
-    tk.Label(card, text=f"Если ПО зависло — нажмите {STOP_HOTKEY.upper()}",
+    format_row = tk.Frame(card, bg=WIN11_CARD_BG)
+    format_row.pack(pady=(4, 0))
+    format_combo = ttk.Combobox(format_row, values=list(PAPER_FORMATS),
+                                state="disabled", width=4,
+                                textvariable=format_value)
+    format_combo.pack(side="left", padx=(0, 6))
+    orient_combo = ttk.Combobox(format_row,
+                                values=["горизонтальный", "вертикальный"],
+                                state="disabled", width=15,
+                                textvariable=orient_value)
+    orient_combo.pack(side="left")
+
+    tk.Label(card,
+             text=f"Для аварийной остановки нажмите {STOP_HOTKEY.upper()}",
              font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
              justify="center").pack(pady=(12, 0))
-    tk.Label(card, text="экстренная остановка, работает всегда",
-             font=FONT_BODY_SM, bg=WIN11_CARD_BG,
-             fg=WIN11_SUBTEXT).pack()
     tk.Label(card, text=APP_VERSION, font=FONT_VERSION,
              bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="bottom", pady=(0, 10))
 
@@ -3316,7 +3482,7 @@ def run_gui():
             log("Ошибка в UI-потоке:\n" + traceback.format_exc())
         root.after(100, poll)
 
-    def worker(paths, manual_count, delete_dxf):
+    def worker(paths, manual_count, delete_dxf, paper_w, paper_h):
         _PIPELINE_STATE["running"] = True
         results = []
         try:
@@ -3334,7 +3500,8 @@ def run_gui():
 
                 try:
                     stats = run_pipeline(path, manual_count, inner,
-                                         delete_dxf=delete_dxf)
+                                         delete_dxf=delete_dxf,
+                                         paper_w=paper_w, paper_h=paper_h)
                     results.append(stats)
                 except TaskStopped:
                     raise
@@ -3376,8 +3543,10 @@ def run_gui():
         text = ("Открываем файл в Schemagee…" if len(paths) == 1
                 else f"Файлов: {len(paths)}. Начинаем…")
         show_progress(text)
+        paper_w, paper_h = paper_dimensions()
         threading.Thread(target=worker,
-                         args=(paths, manual_count, delete_var.get()),
+                         args=(paths, manual_count, delete_var.get(),
+                               paper_w, paper_h),
                          daemon=True).start()
 
     start_stop_hotkey()

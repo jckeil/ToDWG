@@ -34,17 +34,26 @@ def main():
     parser.add_argument("sdd", help="путь к файлу .sdd")
     parser.add_argument("--sheets", type=int, default=None,
                         help="число листов (по умолчанию — авто)")
+    parser.add_argument("--format", default="A2",
+                        choices=["A2", "A3", "A4"],
+                        help="формат листа альбома")
+    parser.add_argument("--orient", default="landscape",
+                        choices=["landscape", "portrait"],
+                        help="ориентация листа")
     opts = parser.parse_args()
 
     if not os.path.isfile(opts.sdd):
         print("нет файла:", opts.sdd)
         return 1
 
+    paper_w, paper_h = app.paper_size(opts.format, opts.orient == "landscape")
     app.init_log()
     app.setup_logging_bridge()
-    print(f"START {opts.sdd} sheets={opts.sheets}", flush=True)
+    print(f"START {opts.sdd} sheets={opts.sheets} "
+          f"paper={opts.format} {opts.orient}", flush=True)
     try:
-        app.run_pipeline(opts.sdd, opts.sheets, emit)
+        app.run_pipeline(opts.sdd, opts.sheets, emit,
+                         paper_w=paper_w, paper_h=paper_h)
     except Exception:
         print("ОШИБКА:\n" + traceback.format_exc(), flush=True)
         return 1

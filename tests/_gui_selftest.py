@@ -5,6 +5,7 @@ import sys
 import tempfile
 
 import tkinter as tk
+from tkinter import ttk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ToDXF_v1 as app
@@ -19,7 +20,10 @@ def mainloop_stub(self, n=0):
             yield from walk(c)
 
     check = None
+    format_check = None
     spin = None
+    combos = []
+    buttons = []
     checks = []
     for w in walk(self):
         try:
@@ -30,13 +34,21 @@ def mainloop_stub(self, n=0):
             elif isinstance(w, tk.Checkbutton):
                 text = w.cget("text")
                 checks.append(text)
-                if text == "Выбрать настройки вручную":
+                if text == "Указать количество листов вручную":
                     check = w
+                if text == "Выбрать формат листа вручную":
+                    format_check = w
                 report.append(("check", text, w.cget("state")))
             elif isinstance(w, tk.Spinbox):
                 spin = w
                 report.append(("spin", w.cget("from"), w.cget("to"),
                                w.cget("state")))
+            elif isinstance(w, ttk.Combobox):
+                combos.append(w)
+                report.append(("combo", w.get(), w.cget("state")))
+            elif isinstance(w, tk.Button):
+                buttons.append(w)
+                report.append(("button", w.cget("text"), w.cget("state")))
         except Exception as e:
             report.append(("error", str(e)))
 
@@ -52,6 +64,16 @@ def mainloop_stub(self, n=0):
         check.invoke()
         self.update()
         report.append(("spin_after_off", spin.cget("state")))
+
+    if format_check is not None and combos:
+        format_check.invoke()
+        self.update()
+        report.append(("combo_after_on",
+                       ", ".join(str(c.cget("state")) for c in combos)))
+        format_check.invoke()
+        self.update()
+        report.append(("combo_after_off",
+                       ", ".join(str(c.cget("state")) for c in combos)))
 
     self.destroy()
 
