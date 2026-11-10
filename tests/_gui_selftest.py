@@ -20,6 +20,7 @@ def mainloop_stub(self, n=0):
 
     check = None
     spin = None
+    checks = []
     for w in walk(self):
         try:
             if isinstance(w, tk.Label):
@@ -27,8 +28,11 @@ def mainloop_stub(self, n=0):
                 if text:
                     report.append(("label", text))
             elif isinstance(w, tk.Checkbutton):
-                check = w
-                report.append(("check", w.cget("text"), w.cget("state")))
+                text = w.cget("text")
+                checks.append(text)
+                if text == "Выбрать настройки вручную":
+                    check = w
+                report.append(("check", text, w.cget("state")))
             elif isinstance(w, tk.Spinbox):
                 spin = w
                 report.append(("spin", w.cget("from"), w.cget("to"),
@@ -38,6 +42,7 @@ def mainloop_stub(self, n=0):
 
     report.append(("title", self.title()))
     report.append(("geometry", self.geometry()))
+    report.append(("checkboxes", ", ".join(checks)))
 
     if check is not None and spin is not None:
         check.invoke()

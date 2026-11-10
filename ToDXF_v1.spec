@@ -1,13 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-# ToDXF v1.0 — один exe, без внешних файлов рядом.
+# ToDXF v1.1 — один exe, без внешних файлов рядом.
 # Иконка вшивается в ресурсы и извлекается через sys._MEIPASS.
+# tkinterdnd2 несёт бинарники tkdnd — их нужно включить в сборку.
+
+from PyInstaller.utils.hooks import collect_data_files
+
+dnd_datas = collect_data_files('tkinterdnd2')
 
 a = Analysis(
     ['ToDXF_v1.py'],
     pathex=[],
     binaries=[],
-    datas=[('Logo_toDXF.ico', '.')],
+    datas=[('Logo_toDXF.ico', '.')] + dnd_datas,
     hiddenimports=[
         'ctypes.wintypes',
         'keyboard',
@@ -22,6 +27,8 @@ a = Analysis(
         'ezdxf',
         'ezdxf.xref',
         'ezdxf.bbox',
+        'tkinterdnd2',
+        'tkinterdnd2.TkinterDnD',
     ],
     hookspath=[],
     hooksconfig={},

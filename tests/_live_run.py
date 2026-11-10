@@ -15,6 +15,12 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ToDXF_v1 as app
 
+try:                        # консоль Windows может быть в cp1251
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+except Exception:
+    pass
+
 
 def emit(kind, payload=None):
     if payload is None:

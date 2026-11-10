@@ -46,6 +46,14 @@ import traceback
 import tkinter as tk
 from tkinter import filedialog
 
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    HAS_DND = True
+except Exception:            # библиотека не установлена — работаем без DnD
+    DND_FILES = None
+    TkinterDnD = None
+    HAS_DND = False
+
 import keyboard
 import pyperclip
 import win32con
@@ -62,7 +70,7 @@ from ezdxf.xref import ConflictPolicy
 # =============================================================================
 
 APP_NAME = "ToDXF"
-APP_VERSION = "v1.0"
+APP_VERSION = "v1.1"
 APP_FULL_TITLE = f"{APP_NAME} {APP_VERSION} — Schemagee → DXF → DWG"
 APP_INNER_TEXT = "Schemagee → DXF → DWG"
 APP_USER_MODEL_ID = "Sintek.ToDXF.V1"
@@ -1726,6 +1734,31 @@ def _save_current_sheet(out_path, main_hwnd=None):
     return created
 
 
+def verify_sheet_file(path):
+    """Проверка листа перед переходом к следующему: файл есть и читается.
+
+    Экспорт может «успеть» создать файл, но без геометрии. Такой лист
+    нельзя считать сохранённым — его нужно переэкспортировать, иначе
+    схема молча пропадёт из альбома.
+    """
+    if not os.path.isfile(path):
+        log(f"  ПРОВЕРКА: файла нет: {os.path.basename(path)}")
+        return False
+    try:
+        size = os.path.getsize(path)
+    except OSError as e:
+        log(f"  ПРОВЕРКА: не удалось прочитать размер: {e}")
+        return False
+    if size <= 0:
+        log(f"  ПРОВЕРКА: файл пуст: {os.path.basename(path)}")
+        return False
+    if not _dxf_has_content(path):
+        log(f"  ПРОВЕРКА: DXF без содержимого: {os.path.basename(path)}")
+        return False
+    log(f"  ПРОВЕРКА: лист в порядке ({size} байт).")
+    return True
+
+
 def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None):
     """Экспортирует каждый лист в отдельный DXF.
 
@@ -1767,6 +1800,9 @@ def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None)
             ensure_schemagee_active(hwnd, what="Schemagee")
             try:
                 if _save_current_sheet(out_path, main_hwnd=hwnd):
+                    if not verify_sheet_file(out_path):
+                        log("  Лист не прошёл проверку — повторяем.")
+                        continue
                     ok = True
                     log(f"  УСПЕХ: файл создан "
                         f"({os.path.getsize(out_path)} байт).")
@@ -2435,12 +2471,14 @@ def export_dwg(dxf_path, dwg_path, keep_dxf=False, attempts=3, delay=5.0):
     return path
 
 
-def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False):
+def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
+              delete_sources=False):
     """Собирает альбом из DXF: схемы в ряд в модели + layout на каждый лист.
 
-    input_dir  — папка с DXF (имя файла содержит 'листN');
-    output_dir — папка результата (<ИМЯ>.dwg, placed.json);
-    name       — имя итогового файла без расширения.
+    input_dir      — папка с DXF (имя файла содержит 'листN');
+    output_dir     — папка результата (<ИМЯ>.dwg, placed.json);
+    name           — имя итогового файла без расширения;
+    delete_sources — удалить входные DXF листов после успешной сборки DWG.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -2571,6 +2609,16 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False):
     if not make_dwg:
         log(f"DWG не запрашивался, оставлен DXF: {output_dxf}")
 
+    if dwg and delete_sources:
+        removed = 0
+        for path in files:
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError as e:
+                log(f"ВНИМАНИЕ: не удалось удалить {path}: {e}")
+        log(f"Удалено исходных DXF: {removed} из {len(files)}")
+
     result = dwg or output_dxf
     log(f"Готово: схем {len(placed)}, layouts {len(placed)}, "
         f"ошибок {len(errors)}, файл {result} ({os.path.getsize(result)} байт)")
@@ -2600,7 +2648,7 @@ def write_result_json(run_dir, payload):
         log(f"Не удалось записать result.json: {e}")
 
 
-def run_pipeline(file_path, manual_count, emit):
+def run_pipeline(file_path, manual_count, emit, delete_dxf=True):
     """Полный цикл: открыть .sdd, сохранить листы, собрать DWG, отдать отчёт."""
     check_stop()
     _OWNED_SCHEMAGEE["opened"] = False
@@ -2709,7 +2757,8 @@ def run_pipeline(file_path, manual_count, emit):
 
     emit("progress", "Собираем альбом и конвертируем в DWG…")
     t_merge = time.time()
-    merge = merge_all(input_dir=run_dir, output_dir=run_dir, name=name)
+    merge = merge_all(input_dir=run_dir, output_dir=run_dir, name=name,
+                      delete_sources=delete_dxf)
     merge_time = time.time() - t_merge
 
     target = merge["file"]
@@ -2753,6 +2802,7 @@ def run_pipeline(file_path, manual_count, emit):
     }
     write_result_json(run_dir, stats)
     emit("success", stats)
+    return stats
 
 
 def print_report(stats):
@@ -2841,12 +2891,12 @@ def run_gui():
     """Главное окно. Возвращает код выхода: 0 — успех, 1 — ошибка, 2 — стоп."""
     result = {"code": 0}
 
-    root = tk.Tk()
+    root = TkinterDnD.Tk() if HAS_DND else tk.Tk()
     root.title(APP_FULL_TITLE)
     root.resizable(False, False)
     root.configure(bg=WIN11_BG)
     apply_icon(root)
-    _center(root, 720, 580)
+    _center(root, 720, 700)
 
     def _report_callback_exception(exc_type, exc_value, exc_tb):
         log("Ошибка в обработчике интерфейса:\n"
@@ -2854,7 +2904,7 @@ def run_gui():
 
     root.report_callback_exception = _report_callback_exception
 
-    card = _card(root, 640, 490)
+    card = _card(root, 640, 610)
     ui_queue = queue.Queue()
 
     def emit(kind, payload=None):
@@ -2878,6 +2928,8 @@ def run_gui():
     manual_var = tk.BooleanVar(value=False)
     count_var = tk.StringVar(value="1")
     hint_var = tk.StringVar(value="")
+    delete_var = tk.BooleanVar(value=True)   # удалять DXF после конвертации
+    report_var = tk.BooleanVar(value=True)   # показывать отчёт по завершении
 
     def on_toggle():
         if manual_var.get():
@@ -2921,16 +2973,21 @@ def run_gui():
     tk.Label(card, textvariable=hint_var, font=FONT_BODY_SM,
              bg=WIN11_CARD_BG, fg=WIN11_DANGER).pack(pady=(2, 0))
 
-    def on_select():
-        manual = manual_var.get()
-        manual_count = None
-        if manual:
-            raw = count_var.get().strip()
-            if not re.fullmatch(r"\d{1,3}", raw) or not (1 <= int(raw) <= 500):
-                hint_var.set("Укажите число листов числом от 1 до 500.")
-                return
-            manual_count = int(raw)
+    def read_manual_count():
+        """(ok, значение): ok=False — в поле некорректное число."""
+        if not manual_var.get():
+            return True, None
+        raw = count_var.get().strip()
+        if not re.fullmatch(r"\d{1,3}", raw) or not (1 <= int(raw) <= 500):
+            hint_var.set("Укажите число листов числом от 1 до 500.")
+            return False, None
         hint_var.set("")
+        return True, int(raw)
+
+    def on_select():
+        ok, manual_count = read_manual_count()
+        if not ok:
+            return
 
         # Стартуем всегда с локальной папки (Рабочий стол): если открывать
         # диалог на сетевом пути, Windows ждёт ответа сервера и окно висит.
@@ -2949,12 +3006,58 @@ def run_gui():
         remember_dir(path)
         log(f"Выбран файл: {path} "
             f"(листов: {manual_count if manual_count else 'авто'})")
-        start_work(path, manual_count)
+        start_work([path], manual_count)
 
-    _button(card, "Выбрать файл", on_select).pack(pady=(16, 0))
+    def on_drop(event):
+        try:
+            paths = root.tk.splitlist(event.data)
+        except Exception:
+            paths = [event.data]
+        files = [os.path.normpath(str(p)) for p in paths
+                 if str(p).lower().endswith(".sdd")]
+        if not files:
+            log("Перетаскивание: файлов .sdd не найдено.")
+            hint_var.set("Перетащите файлы Schemagee (.sdd).")
+            return
+        ok, manual_count = read_manual_count()
+        if not ok:
+            return
+        remember_dir(files[0])
+        log(f"Перетащено файлов: {len(files)} "
+            f"(листов: {manual_count if manual_count else 'авто'})")
+        start_work(files, manual_count)
+
+    drop_frame = tk.Frame(card, bg=WIN11_BG, highlightthickness=1,
+                          highlightbackground=WIN11_BORDER)
+    drop_frame.pack(fill="x", padx=34, pady=(14, 0))
+    drop_hint = ("Перетащите файлы .sdd сюда (можно несколько)"
+                 if HAS_DND else "Drag & drop недоступен")
+    drop_label = tk.Label(drop_frame, text=drop_hint, font=FONT_BODY_SM,
+                          bg=WIN11_BG, fg=WIN11_SUBTEXT, justify="center")
+    drop_label.pack(padx=12, pady=14)
+    if HAS_DND:
+        for widget in (drop_frame, drop_label):
+            widget.drop_target_register(DND_FILES)
+            widget.dnd_bind("<<Drop>>", on_drop)
+
+    _button(card, "Выбрать файл", on_select).pack(pady=(14, 0))
+
+    opts = tk.Frame(card, bg=WIN11_CARD_BG)
+    opts.pack(pady=(10, 0))
+    for opt_text, opt_var in (
+        ("Удалять .dxf файлы после конвертации", delete_var),
+        ("Выводить отчёт о конвертации по завершении", report_var),
+    ):
+        tk.Checkbutton(opts, text=opt_text, variable=opt_var,
+                       font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
+                       activebackground=WIN11_CARD_BG,
+                       activeforeground=WIN11_TEXT, selectcolor=WIN11_CARD_BG,
+                       bd=0, highlightthickness=0,
+                       cursor="hand2").pack(anchor="w")
+
     tk.Label(card, text=f"Если ПО зависло — нажмите {STOP_HOTKEY.upper()}",
              font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
-             justify="center").pack(pady=(14, 0))
+             justify="center").pack(pady=(12, 0))
     tk.Label(card, text="экстренная остановка, работает всегда",
              font=FONT_BODY_SM, bg=WIN11_CARD_BG,
              fg=WIN11_SUBTEXT).pack()
@@ -3065,6 +3168,50 @@ def run_gui():
         win.attributes("-topmost", True)
         win.focus_force()
 
+    def show_batch(results):
+        hide_progress()
+        win = tk.Toplevel(root)
+        win.title("Отчёт о конвертации")
+        win.resizable(False, False)
+        win.configure(bg=WIN11_BG)
+        win.protocol("WM_DELETE_WINDOW", lambda: close_app(0))
+        apply_icon(win)
+        _center(win, 840, 620)
+        card_b = _card(win, 780, 560)
+
+        ok_count = sum(1 for r in results if r and not r.get("error"))
+        fail_count = len(results) - ok_count
+        tk.Label(card_b, text=f"ГОТОВО: {ok_count} из {len(results)}",
+                 font=("Segoe UI Variable Display", 16, "bold"),
+                 bg=WIN11_CARD_BG,
+                 fg=WIN11_OK if not fail_count else WIN11_DANGER).pack(
+            pady=(20, 10))
+        tk.Frame(card_b, bg=WIN11_BORDER, height=1).pack(fill="x", padx=30,
+                                                         pady=(0, 10))
+
+        text = tk.Text(card_b, height=17, font=FONT_BODY_SM,
+                       bg=WIN11_CARD_BG, fg=WIN11_TEXT, bd=0,
+                       highlightthickness=0, wrap="word")
+        text.pack(fill="both", expand=True, padx=34)
+        for item in results:
+            source = os.path.basename(item.get("source") or "?")
+            if item.get("error"):
+                text.insert("end", f"✗ {source}\n   {item['error']}\n\n")
+            else:
+                text.insert(
+                    "end",
+                    f"✓ {source}\n"
+                    f"   листов {item.get('sheet_count')}, "
+                    f"схем {item.get('placed')}, "
+                    f"ошибок {item.get('errors')}\n"
+                    f"   {item.get('target')}\n\n")
+        text.config(state="disabled")
+
+        _button(card_b, "Закрыть", lambda: close_app(0)).pack(side="bottom",
+                                                             pady=(14, 0))
+        win.attributes("-topmost", True)
+        win.focus_force()
+
     def show_error(message):
         hide_progress()
         win = tk.Toplevel(root)
@@ -3134,7 +3281,15 @@ def run_gui():
                 except Exception:
                     pass
         elif kind == "success":
-            show_success(payload)
+            if report_var.get():
+                show_success(payload)
+            else:
+                close_app(0)
+        elif kind == "batch":
+            if report_var.get():
+                show_batch(payload)
+            else:
+                close_app(0)
         elif kind == "error":
             show_error(payload or "Неизвестная ошибка.")
         elif kind == "stopped":
@@ -3151,10 +3306,41 @@ def run_gui():
             log("Ошибка в UI-потоке:\n" + traceback.format_exc())
         root.after(100, poll)
 
-    def worker(path, manual_count):
+    def worker(paths, manual_count, delete_dxf):
         _PIPELINE_STATE["running"] = True
+        results = []
         try:
-            run_pipeline(path, manual_count, emit)
+            for index, path in enumerate(paths, 1):
+                check_stop()
+                if len(paths) > 1:
+                    emit("progress", f"Файл {index} из {len(paths)}: "
+                                     f"{os.path.basename(path)}")
+
+                def inner(kind, payload=None):
+                    # «success» в пакетном режиме не показываем по файлам:
+                    # итог будет один — сводный отчёт.
+                    if kind != "success":
+                        emit(kind, payload)
+
+                try:
+                    stats = run_pipeline(path, manual_count, inner,
+                                         delete_dxf=delete_dxf)
+                    results.append(stats)
+                except TaskStopped:
+                    raise
+                except Exception as e:
+                    log("ОШИБКА:\n" + traceback.format_exc())
+                    results.append({
+                        "source": path,
+                        "name": os.path.splitext(os.path.basename(path))[0],
+                        "error": f"{type(e).__name__}: {e}",
+                        "out_dir": "",
+                    })
+
+            if len(paths) > 1:
+                emit("batch", results)
+            elif results:
+                emit("success", results[0])
         except TaskStopped:
             log("ЗАДАЧА ПРЕРВАНА ПОЛЬЗОВАТЕЛЕМ.")
             emit("stopped")
@@ -3171,11 +3357,17 @@ def run_gui():
             except Exception:
                 pass
 
-    def start_work(path, manual_count):
+    def start_work(paths, manual_count):
+        paths = [p for p in paths if os.path.isfile(p)]
+        if not paths:
+            return
         STOP_EVENT.clear()
         root.withdraw()
-        show_progress("Открываем файл в Schemagee…")
-        threading.Thread(target=worker, args=(path, manual_count),
+        text = ("Открываем файл в Schemagee…" if len(paths) == 1
+                else f"Файлов: {len(paths)}. Начинаем…")
+        show_progress(text)
+        threading.Thread(target=worker,
+                         args=(paths, manual_count, delete_var.get()),
                          daemon=True).start()
 
     start_stop_hotkey()
@@ -3235,6 +3427,7 @@ def main():
     log("=" * 70)
     log(f"{APP_NAME} {APP_VERSION}: старт")
     log(f"Папка программы: {BASE_DIR}")
+    log(f"Drag & drop: {'доступен' if HAS_DND else 'недоступен'}")
 
     code = 0
     try:

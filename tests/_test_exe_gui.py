@@ -10,7 +10,7 @@ import win32gui
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(ROOT, 'dist', 'ToDXF_v1.exe')
-TITLE = 'ToDXF v1.0 — Schemagee → DXF → DWG'
+TITLE = 'ToDXF v1.'
 
 if not os.path.isfile(EXE):
     print('нет exe:', EXE)
