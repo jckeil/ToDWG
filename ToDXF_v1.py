@@ -2712,8 +2712,18 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True):
         emit("progress", "Определяем число листов…")
         sheet_count = read_sheet_count_auto()
         count_source = "диалог печати"
+        stamps = read_sheet_count_from_sdd(source)
         if sheet_count is None:
-            sheet_count = read_sheet_count_from_sdd(source)
+            sheet_count = stamps
+            count_source = "штампы .sdd"
+        elif stamps is not None and stamps != sheet_count:
+            # В диалоге печати поле «по:» — число СТРАНИЦ печати: большая
+            # схема может печататься на нескольких страницах (например,
+            # 7 листов × 6 страниц = 42). Листов в документе столько,
+            # сколько штампов «Формат А…».
+            log(f"ВНИМАНИЕ: диалог печати даёт {sheet_count} страниц, "
+                f"штампов в .sdd — {stamps}; берём штампы.")
+            sheet_count = stamps
             count_source = "штампы .sdd"
         if sheet_count is None:
             raise RuntimeError(
