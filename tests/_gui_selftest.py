@@ -54,7 +54,17 @@ def mainloop_stub(self, n=0):
 
     report.append(("title", self.title()))
     report.append(("geometry", self.geometry()))
+    report.append(("reqheight", self.winfo_reqheight()))
     report.append(("checkboxes", ", ".join(checks)))
+
+    self.update()
+    card = self.winfo_children()[0]
+    bottom = 0
+    for child in card.winfo_children():
+        bottom = max(bottom, child.winfo_y() + child.winfo_height())
+    report.append(("content_bottom", bottom,
+                   "card_h", card.winfo_height(),
+                   "root_h", self.winfo_height()))
 
     if check is not None and spin is not None:
         check.invoke()

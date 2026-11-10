@@ -3015,7 +3015,7 @@ def run_gui():
     root.resizable(False, False)
     root.configure(bg=WIN11_BG)
     apply_icon(root)
-    _center(root, 720, 820)
+    _center(root, 720, 680)
 
     def _report_callback_exception(exc_type, exc_value, exc_tb):
         log("Ошибка в обработчике интерфейса:\n"
@@ -3023,7 +3023,7 @@ def run_gui():
 
     root.report_callback_exception = _report_callback_exception
 
-    card = _card(root, 640, 730)
+    card = _card(root, 640, 600)
     ui_queue = queue.Queue()
 
     def emit(kind, payload=None):
@@ -3052,7 +3052,6 @@ def run_gui():
     format_var = tk.BooleanVar(value=False)  # выбрать формат листа вручную
     format_value = tk.StringVar(value="A3")  # формат при ручном выборе
     orient_value = tk.StringVar(value="горизонтальный")
-    files_var = tk.StringVar(value="Файлы не выбраны")
 
     def on_toggle():
         if manual_var.get():
@@ -3067,13 +3066,13 @@ def run_gui():
         hint_var.set("")
 
     tk.Label(card, text=APP_INNER_TEXT, font=FONT_TITLE,
-             bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(24, 4))
+             bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(14, 2))
     tk.Label(card, text="Сохраняет каждый лист в DXF и собирает альбом в DWG",
              font=FONT_BODY, bg=WIN11_CARD_BG,
              fg=WIN11_SUBTEXT).pack()
     tk.Label(card, text="НЕ ТРОГАЙТЕ МЫШЬ И КЛАВИАТУРУ\nДО ОКОНЧАНИЯ РАБОТЫ!",
              font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
-             justify="center").pack(pady=(14, 10))
+             justify="center").pack(pady=(8, 4))
 
     manual_row = tk.Frame(card, bg=WIN11_CARD_BG)
     manual_row.pack(pady=(0, 2))
@@ -3135,7 +3134,7 @@ def run_gui():
 
     drop_frame = tk.Frame(card, bg=WIN11_BG, highlightthickness=1,
                           highlightbackground=WIN11_BORDER)
-    drop_frame.pack(fill="x", padx=34, pady=(12, 0))
+    drop_frame.pack(fill="x", padx=34, pady=(8, 0))
     drop_hint = ("Перетащите сюда файлы .sdd" if HAS_DND
                  else "Drag & drop недоступен")
     drop_label = tk.Label(drop_frame, text=drop_hint, font=FONT_BODY,
@@ -3146,22 +3145,69 @@ def run_gui():
             widget.drop_target_register(DND_FILES)
             widget.dnd_bind("<<Drop>>", on_drop)
 
-    tk.Label(card, textvariable=files_var, font=FONT_BODY_SM,
-             bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT, wraplength=560,
-             justify="center").pack(pady=(8, 0))
+    files_wrap = tk.Frame(card, bg=WIN11_CARD_BG)
+    files_wrap.pack(fill="x", padx=30, pady=(4, 0))
+    files_canvas = tk.Canvas(files_wrap, bg=WIN11_CARD_BG, height=58,
+                             highlightthickness=0, bd=0)
+    files_scroll = ttk.Scrollbar(files_wrap, orient="vertical",
+                                 command=files_canvas.yview)
+    files_canvas.configure(yscrollcommand=files_scroll.set)
+    files_canvas.pack(side="left", fill="x", expand=True)
+    files_scroll.pack(side="right", fill="y")
+    files_box = tk.Frame(files_canvas, bg=WIN11_CARD_BG)
+    files_canvas.create_window((0, 0), window=files_box, anchor="nw",
+                               width=560)
+    files_box.bind("<Configure>", lambda e: files_canvas.configure(
+        scrollregion=files_canvas.bbox("all")))
 
     pending = []
 
-    def refresh_pending():
-        if pending:
-            names = [os.path.basename(p) for p in pending]
-            shown = ", ".join(names[:3])
-            extra = f" и ещё {len(names) - 3}" if len(names) > 3 else ""
-            files_var.set(f"Выбрано файлов: {len(pending)} — {shown}{extra}")
-            convert_btn.config(state="normal")
+    def paint_convert_button(active):
+        if active:
+            convert_btn.config(state="normal", bg=WIN11_ACCENT,
+                               fg="#FFFFFF",
+                               activebackground=WIN11_ACCENT_H,
+                               activeforeground="#FFFFFF")
+            convert_btn.bind("<Enter>",
+                             lambda e: convert_btn.config(bg=WIN11_ACCENT_H))
+            convert_btn.bind("<Leave>",
+                             lambda e: convert_btn.config(bg=WIN11_ACCENT))
         else:
-            files_var.set("Файлы не выбраны")
-            convert_btn.config(state="disabled")
+            convert_btn.config(state="disabled", bg=WIN11_BORDER,
+                               fg=WIN11_SUBTEXT,
+                               activebackground=WIN11_BORDER)
+            convert_btn.unbind("<Enter>")
+            convert_btn.unbind("<Leave>")
+
+    def render_pending():
+        for child in files_box.winfo_children():
+            child.destroy()
+        if not pending:
+            tk.Label(files_box, text="Файлы не выбраны", font=FONT_BODY_SM,
+                     bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack()
+            return
+        for path in pending:
+            row = tk.Frame(files_box, bg=WIN11_CARD_BG)
+            row.pack(fill="x")
+            tk.Button(row, text="×", command=lambda p=path: remove_file(p),
+                      font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
+                      activebackground=WIN11_CARD_BG,
+                      activeforeground=WIN11_DANGER, relief="flat", bd=0,
+                      highlightthickness=0, cursor="hand2",
+                      width=2).pack(side="left")
+            tk.Label(row, text=os.path.basename(path), font=FONT_BODY_SM,
+                     bg=WIN11_CARD_BG, fg=WIN11_TEXT,
+                     anchor="w").pack(side="left", fill="x", expand=True)
+
+    def remove_file(path):
+        if path in pending:
+            pending.remove(path)
+            log(f"Удалён из очереди: {path}")
+            refresh_pending()
+
+    def refresh_pending():
+        render_pending()
+        paint_convert_button(bool(pending))
 
     def add_files(paths):
         added = 0
@@ -3187,10 +3233,9 @@ def run_gui():
         start_work(paths, manual_count)
 
     buttons = tk.Frame(card, bg=WIN11_CARD_BG)
-    buttons.pack(pady=(10, 0))
+    buttons.pack(pady=(6, 0))
     _button(buttons, "Выбрать файл", on_select).pack(side="left", padx=(0, 10))
-    convert_btn = _button(buttons, "Конвертировать", on_convert,
-                          primary=False)
+    convert_btn = _button(buttons, "Конвертировать", on_convert)
     convert_btn.pack(side="left")
     refresh_pending()
 
@@ -3207,7 +3252,7 @@ def run_gui():
         return paper_size(fmt, landscape)
 
     opts = tk.Frame(card, bg=WIN11_CARD_BG)
-    opts.pack(pady=(10, 0))
+    opts.pack(pady=(6, 0))
     for opt_text, opt_var in (
         ("Удалять .dxf файлы после конвертации", delete_var),
         ("Выводить отчёт о конвертации по завершении", report_var),
@@ -3222,7 +3267,7 @@ def run_gui():
                        cursor="hand2").pack(anchor="w")
 
     format_row = tk.Frame(card, bg=WIN11_CARD_BG)
-    format_row.pack(pady=(4, 0))
+    format_row.pack(pady=(2, 0))
     format_combo = ttk.Combobox(format_row, values=list(PAPER_FORMATS),
                                 state="disabled", width=4,
                                 textvariable=format_value)
@@ -3236,9 +3281,9 @@ def run_gui():
     tk.Label(card,
              text=f"Для аварийной остановки нажмите {STOP_HOTKEY.upper()}",
              font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
-             justify="center").pack(pady=(12, 0))
+             justify="center").pack(pady=(8, 0))
     tk.Label(card, text=APP_VERSION, font=FONT_VERSION,
-             bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="bottom", pady=(0, 10))
+             bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="bottom", pady=(0, 6))
 
     prog = {"win": None, "label": None}
 
