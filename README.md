@@ -1,4 +1,4 @@
-# ToDXF v1.2 — Schemagee → DXF → DWG
+# ToDXF v1.3 — Schemagee → DXF → DWG
 
 Автоматизирует штатный экспорт листов из Schemagee 3.5 (`.sdd`) в DXF и
 собирает из них один альбом DWG: схемы в пространстве модели в ряд и по

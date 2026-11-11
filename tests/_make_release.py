@@ -5,21 +5,40 @@
 Тело релиза берётся из CHANGELOG.md.
 
 Использование:
-    python tests\\_make_release.py v1.2 [путь\\к\\ToDXF.exe]
+    python tests\\_make_release.py v1.3 [путь\\к\\ToDXF.exe]
 """
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 
-TOKEN = os.environ.get("GH_TOKEN", "")
 REPO = "jckeil/ToDXF"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
 DEFAULT_ASSET = os.path.join(ROOT, "dist", "ToDXF.exe")
+
+
+def token_from_git():
+    """Токен из сохранённых учётных данных git (ничего не пишется на диск)."""
+    try:
+        env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+        result = subprocess.run(
+            ["git", "credential", "fill"],
+            input="protocol=https\nhost=github.com\n\n",
+            capture_output=True, text=True, timeout=25, cwd=ROOT, env=env)
+        for line in result.stdout.splitlines():
+            if line.startswith("password="):
+                return line[len("password="):].strip()
+    except Exception as e:
+        print(f"git credential: {e}")
+    return ""
+
+
+TOKEN = os.environ.get("GH_TOKEN") or token_from_git()
 
 
 def api(method, url, payload=None):
@@ -56,7 +75,7 @@ def main():
     if not TOKEN:
         print("нет GH_TOKEN")
         return 1
-    version = sys.argv[1] if len(sys.argv) > 1 else "v1.2"
+    version = sys.argv[1] if len(sys.argv) > 1 else "v1.3"
     asset = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_ASSET
 
     text = open(CHANGELOG, encoding="utf-8").read()

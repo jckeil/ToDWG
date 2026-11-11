@@ -70,7 +70,7 @@ from ezdxf.xref import ConflictPolicy
 # =============================================================================
 
 APP_NAME = "ToDXF"
-APP_VERSION = "v1.2"
+APP_VERSION = "v1.3"
 APP_FULL_TITLE = f"{APP_NAME} {APP_VERSION} — Schemagee → DXF → DWG"
 APP_INNER_TEXT = "Schemagee → DXF → DWG"
 APP_USER_MODEL_ID = "Sintek.ToDXF.V1"
