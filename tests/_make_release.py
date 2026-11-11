@@ -1,20 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Создаёт GitHub Releases v1.0 и v1.1 для jckeil/ToDXF.
+"""Создаёт GitHub Release для jckeil/ToDXF и прикладывает собранный exe.
 
 Токен передаётся через переменную окружения GH_TOKEN (не хранится в файле).
 Тело релиза берётся из CHANGELOG.md.
+
+Использование:
+    python tests\\_make_release.py v1.2 [путь\\к\\ToDXF.exe]
 """
 import json
 import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 TOKEN = os.environ.get("GH_TOKEN", "")
 REPO = "jckeil/ToDXF"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
+DEFAULT_ASSET = os.path.join(ROOT, "dist", "ToDXF.exe")
 
 
 def api(method, url, payload=None):
@@ -23,7 +28,21 @@ def api(method, url, payload=None):
     request.add_header("Authorization", f"token {TOKEN}")
     request.add_header("Accept", "application/vnd.github+json")
     request.add_header("Content-Type", "application/json; charset=utf-8")
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def upload_asset(upload_url, path):
+    """Загружает файл в ассеты релиза (имя — имя файла)."""
+    name = os.path.basename(path)
+    url = upload_url.split("{")[0] + f"?name={urllib.parse.quote(name)}"
+    with open(path, "rb") as fp:
+        data = fp.read()
+    request = urllib.request.Request(url, data=data, method="POST")
+    request.add_header("Authorization", f"token {TOKEN}")
+    request.add_header("Accept", "application/vnd.github+json")
+    request.add_header("Content-Type", "application/octet-stream")
+    with urllib.request.urlopen(request, timeout=600) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -37,21 +56,28 @@ def main():
     if not TOKEN:
         print("нет GH_TOKEN")
         return 1
+    version = sys.argv[1] if len(sys.argv) > 1 else "v1.2"
+    asset = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_ASSET
 
     text = open(CHANGELOG, encoding="utf-8").read()
-
     tags = [t["name"] for t in api(
         "GET", f"https://api.github.com/repos/{REPO}/tags")]
     print("теги на GitHub:", ", ".join(tags) or "нет")
 
-    for version in ("v1.0", "v1.1"):
-        if version not in tags:
-            print(f"{version}: нет тега на GitHub — пропуск")
-            continue
+    if version not in tags:
+        print(f"{version}: нет тега на GitHub — пропуск")
+        return 1
+
+    releases = api("GET", f"https://api.github.com/repos/{REPO}/releases")
+    existing = [r for r in releases if r.get("tag_name") == version]
+    if existing:
+        release = existing[0]
+        print(f"{version}: релиз уже есть — {release.get('html_url')}")
+    else:
         body = section(text, version)
         if not body:
             print(f"{version}: пустая секция в CHANGELOG — пропуск")
-            continue
+            return 1
         payload = {
             "tag_name": version,
             "name": f"ToDXF {version}",
@@ -67,6 +93,22 @@ def main():
         except urllib.error.HTTPError as e:
             print(f"{version}: ошибка {e.code}: "
                   f"{e.read().decode('utf-8', 'replace')[:300]}")
+            return 1
+
+    if asset and os.path.isfile(asset):
+        have = {a.get("name") for a in release.get("assets", [])}
+        if os.path.basename(asset) in have:
+            print(f"  {os.path.basename(asset)}: уже загружен")
+        else:
+            try:
+                uploaded = upload_asset(release["upload_url"], asset)
+                print(f"  загружено: {uploaded.get('name')} "
+                      f"({uploaded.get('size')} байт)")
+            except urllib.error.HTTPError as e:
+                print(f"  ошибка загрузки {e.code}: "
+                      f"{e.read().decode('utf-8', 'replace')[:300]}")
+    else:
+        print("  exe не найден — релиз без файла")
     return 0
 
 
