@@ -1,4 +1,4 @@
-# ToDWG v1.4 — Schemagee → DXF → DWG
+# ToDWG v1.5 — Schemagee → DXF → DWG
 
 Автоматизирует штатный экспорт листов из Schemagee 3.5 (`.sdd`) в DXF и
 собирает из них один альбом DWG: схемы в пространстве модели в ряд и по
@@ -23,7 +23,7 @@ ToDWG\
 ├─ CHANGELOG.md             история изменений по версиям
 ├─ ROADMAP.md               планы и идеи
 ├─ input\                   26 DXF (результат экспорта) — данные для тестов
-├─ dist\                    собранный ToDWG_v1.4.exe (локально, не в git)
+├─ dist\                    собранный ToDWG_v1.5.exe (локально, не в git)
 └─ tests\                   локальные проверки (не входят в exe)
 ```
 
@@ -67,7 +67,7 @@ python ToDWG_v1.py --headless --dxf-folder input --name check
 python -m PyInstaller ToDWG_v1.spec --clean --noconfirm
 ```
 
-Результат: `dist\ToDWG_v1.4.exe` (onefile, ~30 МБ). Папка `build\`
+Результат: `dist\ToDWG_v1.5.exe` (onefile, ~30 МБ). Папка `build\`
 пересоздаётся и в репозиторий не входит.
 
 ## Тесты
@@ -91,7 +91,7 @@ python tests\_live_run.py "путь\file.sdd" [--sheets N]  # живой про�
 
 - Python 3.14 (проверено), пакеты: `ezdxf`, `pywin32`, `keyboard`,
   `pyperclip`, `tkinterdnd2`, `pyinstaller`;
-- Schemagee 3.5 (лицензия Синтек);
+- Schemagee 3.5 (лицензия Организации);
 - для DWG: AutoCAD (COM) или ODA File Converter. Если нет ни того, ни
   другого — остаётся собранный DXF, об этом пишется в отчёт;
 - шрифт `isocpeui.ttf` (ISOCPEUR Italic) — должен быть установлен в

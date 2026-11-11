@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-# ToDWG v1.1 — один exe, без внешних файлов рядом.
+# ToDWG v1.5 — один exe, без внешних файлов рядом.
 # Иконка вшивается в ресурсы и извлекается через sys._MEIPASS.
 # tkinterdnd2 несёт бинарники tkdnd — их нужно включить в сборку.
 
@@ -45,7 +45,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ToDWG_v1.4',
+    name='ToDWG_v1.5',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

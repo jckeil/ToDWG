@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Создаёт GitHub Release для jckeil/ToDXF и прикладывает собранный exe.
+"""Создаёт GitHub Release для jckeil/ToDWG и прикладывает собранный exe.
 
-Имя репозитория оставлено прежним (jckeil/ToDXF) — переименовано только
-приложение. Токен берётся из GH_TOKEN или из сохранённых учётных данных git;
+Токен берётся из GH_TOKEN или из сохранённых учётных данных git;
 тело релиза — из CHANGELOG.md.
 
 Использование:
-    python tests\\_make_release.py v1.4 [путь\\к\\ToDWG_v1.4.exe]
+    python tests\\_make_release.py v1.5 [путь\\к\\ToDWG_v1.5.exe]
 """
 import json
 import os
@@ -17,13 +16,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-REPO = "jckeil/ToDXF"
+REPO = "jckeil/ToDWG"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
 
 
 def default_asset(version):
-    """Путь к exe версии: dist\\ToDWG_v1.4.exe."""
+    """Путь к exe версии: dist\\ToDWG_v1.5.exe."""
     return os.path.join(ROOT, "dist", f"ToDWG_{version}.exe")
 
 
@@ -80,7 +79,7 @@ def main():
     if not TOKEN:
         print("нет GH_TOKEN")
         return 1
-    version = sys.argv[1] if len(sys.argv) > 1 else "v1.4"
+    version = sys.argv[1] if len(sys.argv) > 1 else "v1.5"
     asset = sys.argv[2] if len(sys.argv) > 2 else default_asset(version)
 
     text = open(CHANGELOG, encoding="utf-8").read()

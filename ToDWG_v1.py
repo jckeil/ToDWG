@@ -70,10 +70,10 @@ from ezdxf.xref import ConflictPolicy
 # =============================================================================
 
 APP_NAME = "ToDWG"
-APP_VERSION = "v1.4"
+APP_VERSION = "v1.5"
 APP_FULL_TITLE = f"{APP_NAME} {APP_VERSION} — Schemagee → DXF → DWG"
 APP_INNER_TEXT = "Schemagee → DXF → DWG"
-APP_USER_MODEL_ID = "Sintek.ToDWG.V1"
+APP_USER_MODEL_ID = "ToDWG.App.V1"
 
 ICON_FILENAME = "Logo_toDWG.ico"
 
@@ -3630,7 +3630,7 @@ def run_gui():
     pending = []
     # Последний запущенный список файлов: возвращается в окно при отмене.
     _LAST_PATHS = {"paths": []}
-    theme_state = {"dark": False}
+    theme_state = {"dark": True}
 
     LIGHT_TO_DARK = {
         "#F3F3F3": "#2B2B2B",   # фон окна
@@ -4042,7 +4042,7 @@ def run_gui():
 
         render_pending()
 
-    dark_var = tk.BooleanVar(value=False)
+    dark_var = tk.BooleanVar(value=True)
     theme_row = tk.Frame(card, bg=WIN11_CARD_BG)
     theme_row.place(relx=1.0, x=-16, y=12, anchor="ne")
     theme_label = tk.Label(theme_row, text="Темная тема", font=FONT_BODY_SM,
@@ -4506,6 +4506,8 @@ def run_gui():
 
     root.protocol("WM_DELETE_WINDOW", lambda: close_app(0))
 
+    # Тёмная тема по умолчанию: окно уже собрано — перекрашиваем его целиком.
+    set_theme(True)
     root.after(100, poll)
     root.mainloop()
 
