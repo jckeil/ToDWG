@@ -70,7 +70,7 @@ from ezdxf.xref import ConflictPolicy
 # =============================================================================
 
 APP_NAME = "ToDXF"
-APP_VERSION = "v1.1"
+APP_VERSION = "v1.2"
 APP_FULL_TITLE = f"{APP_NAME} {APP_VERSION} — Schemagee → DXF → DWG"
 APP_INNER_TEXT = "Schemagee → DXF → DWG"
 APP_USER_MODEL_ID = "Sintek.ToDXF.V1"
@@ -3015,7 +3015,7 @@ def run_gui():
     root.resizable(False, False)
     root.configure(bg=WIN11_BG)
     apply_icon(root)
-    _center(root, 720, 680)
+    _center(root, 733, 734)
 
     def _report_callback_exception(exc_type, exc_value, exc_tb):
         log("Ошибка в обработчике интерфейса:\n"
@@ -3023,7 +3023,7 @@ def run_gui():
 
     root.report_callback_exception = _report_callback_exception
 
-    card = _card(root, 640, 600)
+    card = _card(root, 640, 620)
     ui_queue = queue.Queue()
 
     def emit(kind, payload=None):
@@ -3066,33 +3066,10 @@ def run_gui():
         hint_var.set("")
 
     tk.Label(card, text=APP_INNER_TEXT, font=FONT_TITLE,
-             bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(14, 2))
+             bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(18, 2))
     tk.Label(card, text="Сохраняет каждый лист в DXF и собирает альбом в DWG",
              font=FONT_BODY, bg=WIN11_CARD_BG,
-             fg=WIN11_SUBTEXT).pack()
-    tk.Label(card, text="НЕ ТРОГАЙТЕ МЫШЬ И КЛАВИАТУРУ\nДО ОКОНЧАНИЯ РАБОТЫ!",
-             font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
-             justify="center").pack(pady=(8, 4))
-
-    manual_row = tk.Frame(card, bg=WIN11_CARD_BG)
-    manual_row.pack(pady=(0, 2))
-    tk.Checkbutton(
-        manual_row, text="Указать количество листов вручную",
-        variable=manual_var, command=on_toggle, font=FONT_BODY,
-        bg=WIN11_CARD_BG, fg=WIN11_TEXT,
-        activebackground=WIN11_CARD_BG, activeforeground=WIN11_TEXT,
-        selectcolor=WIN11_CARD_BG, bd=0, highlightthickness=0,
-        cursor="hand2",
-    ).pack(side="left")
-    spin = tk.Spinbox(
-        manual_row, from_=1, to=500, width=5, font=FONT_BODY,
-        textvariable=count_var, state="disabled", justify="center",
-        relief="solid", bd=1,
-    )
-    spin.pack(side="left", padx=(8, 0))
-
-    tk.Label(card, textvariable=hint_var, font=FONT_BODY_SM,
-             bg=WIN11_CARD_BG, fg=WIN11_DANGER).pack(pady=(2, 0))
+             fg=WIN11_SUBTEXT).pack(pady=(0, 14))
 
     def read_manual_count():
         """(ok, значение): ok=False — в поле некорректное число."""
@@ -3132,31 +3109,37 @@ def run_gui():
             return
         add_files(files)
 
-    drop_frame = tk.Frame(card, bg=WIN11_BG, highlightthickness=1,
-                          highlightbackground=WIN11_BORDER)
-    drop_frame.pack(fill="x", padx=34, pady=(8, 0))
+    DROP_BG = "#F5F5F5"
+    drop_frame = tk.Frame(card, bg=DROP_BG, width=410, height=110,
+                          highlightthickness=1,
+                          highlightbackground="#D0D0D0")
+    drop_frame.pack(padx=115, pady=(0, 0))
+    drop_frame.pack_propagate(False)
     drop_hint = ("Перетащите сюда файлы .sdd" if HAS_DND
                  else "Drag & drop недоступен")
     drop_label = tk.Label(drop_frame, text=drop_hint, font=FONT_BODY,
-                          bg=WIN11_BG, fg=WIN11_SUBTEXT, justify="center")
-    drop_label.pack(padx=12, pady=21)
+                          bg=DROP_BG, fg=WIN11_SUBTEXT, justify="center")
+    drop_label.pack(expand=True)
     if HAS_DND:
         for widget in (drop_frame, drop_label):
             widget.drop_target_register(DND_FILES)
             widget.dnd_bind("<<Drop>>", on_drop)
 
-    files_wrap = tk.Frame(card, bg=WIN11_CARD_BG)
-    files_wrap.pack(fill="x", padx=30, pady=(4, 0))
-    files_canvas = tk.Canvas(files_wrap, bg=WIN11_CARD_BG, height=58,
+    files_wrap = tk.Frame(card, bg="#FFFFFF", width=410, height=127,
+                          highlightthickness=1,
+                          highlightbackground="#D0D0D0")
+    files_wrap.pack(padx=115, pady=(12, 0))
+    files_wrap.pack_propagate(False)
+    files_canvas = tk.Canvas(files_wrap, bg="#FFFFFF", height=127,
                              highlightthickness=0, bd=0)
     files_scroll = ttk.Scrollbar(files_wrap, orient="vertical",
                                  command=files_canvas.yview)
     files_canvas.configure(yscrollcommand=files_scroll.set)
-    files_canvas.pack(side="left", fill="x", expand=True)
+    files_canvas.pack(side="left", fill="both", expand=True)
     files_scroll.pack(side="right", fill="y")
-    files_box = tk.Frame(files_canvas, bg=WIN11_CARD_BG)
+    files_box = tk.Frame(files_canvas, bg="#FFFFFF")
     files_canvas.create_window((0, 0), window=files_box, anchor="nw",
-                               width=560)
+                               width=386)
     files_box.bind("<Configure>", lambda e: files_canvas.configure(
         scrollregion=files_canvas.bbox("all")))
 
@@ -3183,8 +3166,8 @@ def run_gui():
         for child in files_box.winfo_children():
             child.destroy()
         if not pending:
-            tk.Label(files_box, text="Файлы не выбраны", font=FONT_BODY_SM,
-                     bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack()
+            tk.Label(files_box, text="Файлы не выбраны", font=FONT_BODY,
+                     bg="#FFFFFF", fg=WIN11_SUBTEXT).pack(pady=(50, 0))
             return
         for path in pending:
             row = tk.Frame(files_box, bg=WIN11_CARD_BG)
@@ -3233,9 +3216,12 @@ def run_gui():
         start_work(paths, manual_count)
 
     buttons = tk.Frame(card, bg=WIN11_CARD_BG)
-    buttons.pack(pady=(6, 0))
-    _button(buttons, "Выбрать файл", on_select).pack(side="left", padx=(0, 10))
+    buttons.pack(pady=(14, 0))
+    select_btn = _button(buttons, "Выбрать файлы", on_select)
+    select_btn.config(width=14)
+    select_btn.pack(side="left", padx=(0, 10))
     convert_btn = _button(buttons, "Конвертировать", on_convert)
+    convert_btn.config(width=14)
     convert_btn.pack(side="left")
     refresh_pending()
 
@@ -3251,37 +3237,65 @@ def run_gui():
         landscape = orient_value.get() != "вертикальный"
         return paper_size(fmt, landscape)
 
-    opts = tk.Frame(card, bg=WIN11_CARD_BG)
-    opts.pack(pady=(6, 0))
-    for opt_text, opt_var in (
-        ("Удалять .dxf файлы после конвертации", delete_var),
-        ("Выводить отчёт о конвертации по завершении", report_var),
-        ("Выбрать формат листа вручную", format_var),
-    ):
-        command = on_toggle_format if opt_var is format_var else None
-        tk.Checkbutton(opts, text=opt_text, variable=opt_var,
-                       command=command, font=FONT_BODY_SM, bg=WIN11_CARD_BG,
-                       fg=WIN11_TEXT, activebackground=WIN11_CARD_BG,
-                       activeforeground=WIN11_TEXT, selectcolor=WIN11_CARD_BG,
-                       bd=0, highlightthickness=0,
-                       cursor="hand2").pack(anchor="w")
+    def make_check(parent, text, variable, command=None):
+        return tk.Checkbutton(parent, text=text, variable=variable,
+                              command=command, font=FONT_BODY_SM,
+                              bg=WIN11_CARD_BG, fg=WIN11_TEXT,
+                              activebackground=WIN11_CARD_BG,
+                              activeforeground=WIN11_TEXT,
+                              selectcolor=WIN11_CARD_BG, bd=0,
+                              highlightthickness=0, cursor="hand2")
 
-    format_row = tk.Frame(card, bg=WIN11_CARD_BG)
-    format_row.pack(pady=(2, 0))
+    opts = tk.Frame(card, bg=WIN11_CARD_BG)
+    opts.pack(anchor="w", padx=140, pady=(8, 0))
+
+    manual_row = tk.Frame(opts, bg=WIN11_CARD_BG)
+    manual_row.pack(anchor="w")
+    make_check(manual_row, "Указать количество листов вручную", manual_var,
+               on_toggle).pack(side="left")
+    spin = tk.Spinbox(manual_row, from_=1, to=500, width=5,
+                      font=FONT_BODY, textvariable=count_var,
+                      state="disabled", justify="center", relief="solid",
+                      bd=1)
+    spin.pack(side="left", padx=(12, 0))
+
+    make_check(opts, "Удалять .dxf файлы после конвертации",
+               delete_var).pack(anchor="w", pady=(2, 0))
+    make_check(opts, "Выводить отчёт по завершении",
+               report_var).pack(anchor="w", pady=(2, 0))
+
+    format_row = tk.Frame(opts, bg=WIN11_CARD_BG)
+    format_row.pack(anchor="w", pady=(2, 0))
+    make_check(format_row, "Выбрать формат листа вручную", format_var,
+               on_toggle_format).pack(side="left")
     format_combo = ttk.Combobox(format_row, values=list(PAPER_FORMATS),
                                 state="disabled", width=4,
                                 textvariable=format_value)
-    format_combo.pack(side="left", padx=(0, 6))
+    format_combo.pack(side="left", padx=(10, 0))
     orient_combo = ttk.Combobox(format_row,
                                 values=["горизонтальный", "вертикальный"],
                                 state="disabled", width=15,
                                 textvariable=orient_value)
-    orient_combo.pack(side="left")
+    orient_combo.pack(side="left", padx=(6, 0))
 
-    tk.Label(card,
-             text=f"Для аварийной остановки нажмите {STOP_HOTKEY.upper()}",
+    red_top = tk.Label(
+        card, text="НЕ ИСПОЛЬЗУЙТЕ КОМПЬЮТЕР ДО ОКОНЧАНИЯ КОНВЕРТАЦИИ",
+        font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER, justify="center")
+    red_top.pack(pady=(10, 0))
+    tk.Label(card, text="ДЛЯ АВАРИЙНОЙ ОСТАНОВКИ НАЖМИТЕ CTRL+ALT+0",
              font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
-             justify="center").pack(pady=(8, 0))
+             justify="center").pack()
+
+    hint_label = tk.Label(card, textvariable=hint_var, font=FONT_BODY_SM,
+                          bg=WIN11_CARD_BG, fg=WIN11_DANGER)
+
+    def sync_hint(*_):
+        if hint_var.get().strip():
+            hint_label.pack(pady=(2, 0), before=red_top)
+        else:
+            hint_label.pack_forget()
+
+    hint_var.trace_add("write", sync_hint)
     tk.Label(card, text=APP_VERSION, font=FONT_VERSION,
              bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="bottom", pady=(0, 6))
 

@@ -60,11 +60,23 @@ def mainloop_stub(self, n=0):
     self.update()
     card = self.winfo_children()[0]
     bottom = 0
+    layout = []
     for child in card.winfo_children():
-        bottom = max(bottom, child.winfo_y() + child.winfo_height())
+        text = ""
+        try:
+            text = str(child.cget("text"))[:24]
+        except Exception:
+            pass
+        y = child.winfo_y()
+        h = child.winfo_height()
+        layout.append(f"{child.winfo_class()}:{text or '-'}@{y}+{h}")
+        if text == app.APP_VERSION:
+            continue
+        bottom = max(bottom, y + h)
     report.append(("content_bottom", bottom,
                    "card_h", card.winfo_height(),
                    "root_h", self.winfo_height()))
+    report.append(("layout", " | ".join(layout)))
 
     if check is not None and spin is not None:
         check.invoke()
