@@ -78,6 +78,27 @@ def mainloop_stub(self, n=0):
                    "root_h", self.winfo_height()))
     report.append(("layout", " | ".join(layout)))
 
+    canvas = None
+    dark = None
+    for w in walk(self):
+        if isinstance(w, tk.Canvas):
+            canvas = w
+        if isinstance(w, tk.Checkbutton) and str(w.cget("text")) == "Темная тема":
+            dark = w
+
+    if canvas is not None:
+        report.append(("canvas_wheel_bound",
+                       bool(canvas.bind("<MouseWheel>"))))
+
+    if dark is not None:
+        report.append(("theme_light", self.cget("bg"), card.cget("bg")))
+        dark.invoke()
+        self.update()
+        report.append(("theme_dark", self.cget("bg"), card.cget("bg")))
+        dark.invoke()
+        self.update()
+        report.append(("theme_back", self.cget("bg"), card.cget("bg")))
+
     if check is not None and spin is not None:
         check.invoke()
         self.update()

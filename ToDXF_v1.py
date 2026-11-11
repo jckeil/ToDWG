@@ -3015,6 +3015,7 @@ def run_gui():
     root.resizable(False, False)
     root.configure(bg=WIN11_BG)
     apply_icon(root)
+    initial_ttk_theme = ttk.Style().theme_use()
     _center(root, 733, 734)
 
     def _report_callback_exception(exc_type, exc_value, exc_tb):
@@ -3110,77 +3111,132 @@ def run_gui():
         add_files(files)
 
     DROP_BG = "#F5F5F5"
-    drop_frame = tk.Frame(card, bg=DROP_BG, width=410, height=110,
-                          highlightthickness=1,
-                          highlightbackground="#D0D0D0")
-    drop_frame.pack(padx=115, pady=(0, 0))
-    drop_frame.pack_propagate(False)
-    drop_hint = ("Перетащите сюда файлы .sdd" if HAS_DND
-                 else "Drag & drop недоступен")
-    drop_label = tk.Label(drop_frame, text=drop_hint, font=FONT_BODY,
-                          bg=DROP_BG, fg=WIN11_SUBTEXT, justify="center")
-    drop_label.pack(expand=True)
-    if HAS_DND:
-        for widget in (drop_frame, drop_label):
-            widget.drop_target_register(DND_FILES)
-            widget.dnd_bind("<<Drop>>", on_drop)
+    DROP_BORDER = "#D0D0D0"
+    AREA_BG = "#FFFFFF"
 
-    files_wrap = tk.Frame(card, bg="#FFFFFF", width=410, height=127,
+    files_area = tk.Frame(card, bg=DROP_BG, width=410, height=237,
                           highlightthickness=1,
-                          highlightbackground="#D0D0D0")
-    files_wrap.pack(padx=115, pady=(12, 0))
-    files_wrap.pack_propagate(False)
-    files_canvas = tk.Canvas(files_wrap, bg="#FFFFFF", height=127,
+                          highlightbackground=DROP_BORDER)
+    files_area.pack(padx=115, pady=(0, 0))
+    files_area.pack_propagate(False)
+
+    drop_placeholder = tk.Label(
+        files_area,
+        text=("Перенесите сюда файлы .sdd" if HAS_DND
+              else "Drag & drop недоступен"),
+        font=FONT_BODY, bg=DROP_BG, fg=WIN11_SUBTEXT, justify="center")
+    drop_placeholder.pack(expand=True)
+
+    files_canvas = tk.Canvas(files_area, bg=AREA_BG, height=235,
                              highlightthickness=0, bd=0)
-    files_scroll = ttk.Scrollbar(files_wrap, orient="vertical",
+    files_scroll = ttk.Scrollbar(files_area, orient="vertical",
                                  command=files_canvas.yview)
     files_canvas.configure(yscrollcommand=files_scroll.set)
-    files_canvas.pack(side="left", fill="both", expand=True)
-    files_scroll.pack(side="right", fill="y")
-    files_box = tk.Frame(files_canvas, bg="#FFFFFF")
+    files_box = tk.Frame(files_canvas, bg=AREA_BG)
     files_canvas.create_window((0, 0), window=files_box, anchor="nw",
                                width=386)
     files_box.bind("<Configure>", lambda e: files_canvas.configure(
         scrollregion=files_canvas.bbox("all")))
 
+    def scroll_files(event):
+        try:
+            delta = int(-1 * (event.delta / 120))
+        except Exception:
+            delta = -1 if event.delta > 0 else 1
+        files_canvas.yview_scroll(delta, "units")
+        return "break"
+
+    for widget in (files_area, drop_placeholder, files_canvas, files_box,
+                   files_scroll):
+        widget.bind("<MouseWheel>", scroll_files)
+
+    if HAS_DND:
+        for widget in (files_area, drop_placeholder, files_canvas, files_box):
+            widget.drop_target_register(DND_FILES)
+            widget.dnd_bind("<<Drop>>", on_drop)
+
     pending = []
+    theme_state = {"dark": False}
+
+    LIGHT_TO_DARK = {
+        "#F3F3F3": "#2B2B2B",   # фон окна
+        "#FFFFFF": "#333333",   # карточка, список, зона
+        "#1A1A1A": "#E6E6E6",   # основной текст
+        "#5C5C5C": "#A8A8A8",   # вторичный текст
+        "#C42B1C": "#D9807A",   # предупреждение
+        "#0067C0": "#3B7EA1",   # акцент
+        "#1A7DD8": "#4A90B8",   # акцент (наведение)
+        "#E0E0E0": "#454545",   # границы
+        "#107C10": "#7FB37F",   # успех
+        "#F5F5F5": "#2F2F2F",   # зона перетаскивания
+        "#D0D0D0": "#4A4A4A",   # рамка зоны
+    }
+    DARK_TO_LIGHT = {v: k for k, v in LIGHT_TO_DARK.items()}
+
+    def area_colors():
+        if theme_state["dark"]:
+            return "#2F2F2F", "#333333"
+        return DROP_BG, AREA_BG
+
+    def palette():
+        if theme_state["dark"]:
+            return {"accent": "#3B7EA1", "accent_h": "#4A90B8",
+                    "border": "#454545", "subtext": "#A8A8A8"}
+        return {"accent": WIN11_ACCENT, "accent_h": WIN11_ACCENT_H,
+                "border": WIN11_BORDER, "subtext": WIN11_SUBTEXT}
 
     def paint_convert_button(active):
+        colors = palette()
         if active:
-            convert_btn.config(state="normal", bg=WIN11_ACCENT,
+            convert_btn.config(state="normal", bg=colors["accent"],
                                fg="#FFFFFF",
-                               activebackground=WIN11_ACCENT_H,
+                               activebackground=colors["accent_h"],
                                activeforeground="#FFFFFF")
             convert_btn.bind("<Enter>",
-                             lambda e: convert_btn.config(bg=WIN11_ACCENT_H))
+                             lambda e: convert_btn.config(
+                                 bg=colors["accent_h"]))
             convert_btn.bind("<Leave>",
-                             lambda e: convert_btn.config(bg=WIN11_ACCENT))
+                             lambda e: convert_btn.config(bg=colors["accent"]))
         else:
-            convert_btn.config(state="disabled", bg=WIN11_BORDER,
-                               fg=WIN11_SUBTEXT,
-                               activebackground=WIN11_BORDER)
+            convert_btn.config(state="disabled", bg=colors["border"],
+                               fg=colors["subtext"],
+                               activebackground=colors["border"])
             convert_btn.unbind("<Enter>")
             convert_btn.unbind("<Leave>")
 
     def render_pending():
         for child in files_box.winfo_children():
             child.destroy()
+        drop_bg, area_bg = area_colors()
+        text_color = "#E6E6E6" if theme_state["dark"] else WIN11_TEXT
+        danger = "#D9807A" if theme_state["dark"] else WIN11_DANGER
         if not pending:
-            tk.Label(files_box, text="Файлы не выбраны", font=FONT_BODY,
-                     bg="#FFFFFF", fg=WIN11_SUBTEXT).pack(pady=(50, 0))
+            files_canvas.pack_forget()
+            files_scroll.pack_forget()
+            files_area.configure(bg=drop_bg)
+            drop_placeholder.configure(bg=drop_bg)
+            drop_placeholder.pack(expand=True)
             return
+        drop_placeholder.pack_forget()
+        files_area.configure(bg=area_bg)
+        files_canvas.configure(bg=area_bg)
+        files_box.configure(bg=area_bg)
+        files_canvas.pack(side="left", fill="both", expand=True)
+        files_scroll.pack(side="right", fill="y")
         for path in pending:
-            row = tk.Frame(files_box, bg=WIN11_CARD_BG)
+            row = tk.Frame(files_box, bg=area_bg)
             row.pack(fill="x")
             tk.Button(row, text="×", command=lambda p=path: remove_file(p),
-                      font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
-                      activebackground=WIN11_CARD_BG,
-                      activeforeground=WIN11_DANGER, relief="flat", bd=0,
-                      highlightthickness=0, cursor="hand2",
-                      width=2).pack(side="left")
+                      font=FONT_BODY_SM, bg=area_bg, fg=danger,
+                      activebackground=area_bg, activeforeground=danger,
+                      relief="flat", bd=0, highlightthickness=0,
+                      cursor="hand2", width=2).pack(side="left")
             tk.Label(row, text=os.path.basename(path), font=FONT_BODY_SM,
-                     bg=WIN11_CARD_BG, fg=WIN11_TEXT,
+                     bg=area_bg, fg=text_color,
                      anchor="w").pack(side="left", fill="x", expand=True)
+            row.bind("<MouseWheel>", scroll_files)
+            for widget in row.winfo_children():
+                widget.bind("<MouseWheel>", scroll_files)
 
     def remove_file(path):
         if path in pending:
@@ -3296,6 +3352,65 @@ def run_gui():
             hint_label.pack_forget()
 
     hint_var.trace_add("write", sync_hint)
+
+    def set_theme(dark):
+        """Мягкая тёмная/светлая тема: перекрашивает всё окно по палитре."""
+        theme_state["dark"] = dark
+        mapping = LIGHT_TO_DARK if dark else DARK_TO_LIGHT
+
+        def walk(widget):
+            for option in ("bg", "fg", "activebackground",
+                           "activeforeground", "selectcolor",
+                           "highlightbackground", "highlightcolor"):
+                try:
+                    current = str(widget.cget(option))
+                except Exception:
+                    continue
+                new = mapping.get(current)
+                if not new:
+                    continue
+                try:
+                    widget.configure(**{option: new})
+                except Exception:
+                    pass
+            for child in widget.winfo_children():
+                walk(child)
+
+        walk(root)
+
+        colors = palette()
+        select_btn.configure(bg=colors["accent"], fg="#FFFFFF",
+                             activebackground=colors["accent_h"],
+                             activeforeground="#FFFFFF")
+        paint_convert_button(bool(pending))
+
+        style = ttk.Style()
+        try:
+            style.theme_use("clam" if dark else initial_ttk_theme)
+        except Exception:
+            pass
+        if dark:
+            style.configure("TCombobox", fieldbackground="#3A3A3A",
+                            background="#3A3A3A", foreground="#E6E6E6",
+                            arrowcolor="#E6E6E6")
+            style.map("TCombobox",
+                      fieldbackground=[("readonly", "#3A3A3A")],
+                      foreground=[("readonly", "#E6E6E6")])
+            style.configure("Vertical.TScrollbar", background="#3A3A3A",
+                            troughcolor="#2B2B2B", arrowcolor="#A8A8A8",
+                            borderwidth=0)
+        else:
+            style.configure("TCombobox", fieldbackground="#FFFFFF",
+                            background="#FFFFFF", foreground="#1A1A1A")
+            style.configure("Vertical.TScrollbar", background="#F0F0F0",
+                            troughcolor="#FFFFFF", arrowcolor="#5C5C5C")
+
+        render_pending()
+
+    dark_var = tk.BooleanVar(value=False)
+    dark_check = make_check(card, "Темная тема", dark_var,
+                            lambda: set_theme(dark_var.get()))
+    dark_check.place(relx=1.0, x=-16, y=14, anchor="ne")
     tk.Label(card, text=APP_VERSION, font=FONT_VERSION,
              bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="bottom", pady=(0, 6))
 
