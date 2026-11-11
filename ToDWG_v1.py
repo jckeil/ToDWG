@@ -611,6 +611,10 @@ def _stop_watchdog(grace=8.0):
     except Exception:
         pass
     try:
+        stop_mouse_block()
+    except Exception:
+        pass
+    try:
         close_logs()
     except Exception:
         pass
@@ -621,7 +625,11 @@ def request_stop(reason=""):
     """Мгновенная остановка: только флаг, таймер и одна строка в лог."""
     if STOP_EVENT.is_set():
         return
+    # Сначала сигнал остановки — конвейер реагирует мгновенно. Затем сразу
+    # возвращаем пользователю мышь: снятие блокировки не должно задерживать
+    # аварийный выход.
     STOP_EVENT.set()
+    stop_mouse_block()
     suffix = f" {reason}" if reason else ""
     log(f"Нажата {STOP_HOTKEY} — останавливаем задачу.{suffix}")
     threading.Thread(target=_stop_watchdog, args=(8.0,), daemon=True).start()
@@ -685,6 +693,113 @@ def start_stop_hotkey():
             user32.UnregisterHotKey(None, 1)
 
     threading.Thread(target=loop, name="stop-hotkey", daemon=True).start()
+
+
+# --- Блокировка МЫШИ на время конвертации ------------------------------------
+# Блокируем только мышь (WH_MOUSE_LL). Клавиатуру НЕ трогаем: аварийная
+# остановка Ctrl+Alt+0 (RegisterHotKey + keyboard) должна срабатывать всегда.
+_WH_MOUSE_LL = 14
+_WM_QUIT = 0x0012
+_MOUSE_BLOCK = {"enabled": False, "thread": None, "thread_id": 0, "hook": 0}
+
+
+def _mouse_block_proc(n_code, w_param, l_param):
+    try:
+        if n_code == 0 and _MOUSE_BLOCK["enabled"]:
+            return 1                     # проглотить событие мыши
+    except Exception:
+        pass
+    try:
+        return ctypes.windll.user32.CallNextHookEx(0, n_code, w_param, l_param)
+    except Exception:
+        return 0
+
+
+_MOUSE_HOOK_PROC = ctypes.WINFUNCTYPE(
+    ctypes.c_ssize_t, ctypes.c_int, ctypes.c_size_t, ctypes.c_ssize_t
+)(_mouse_block_proc)
+
+
+def _mouse_block_loop():
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    msg = ctypes.wintypes.MSG()
+    # Очередь сообщений создаём заранее, иначе PostThreadMessage(WM_QUIT)
+    # при снятии блокировки может не дойти до потока.
+    user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 0)
+    _MOUSE_BLOCK["thread_id"] = kernel32.GetCurrentThreadId()
+    try:
+        user32.SetWindowsHookExW.restype = ctypes.c_void_p
+        user32.SetWindowsHookExW.argtypes = [
+            ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
+        user32.CallNextHookEx.restype = ctypes.c_ssize_t
+        user32.CallNextHookEx.argtypes = [
+            ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t, ctypes.c_ssize_t]
+        user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
+        kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+        kernel32.GetModuleHandleW.argtypes = [ctypes.c_wchar_p]
+        hook = user32.SetWindowsHookExW(
+            _WH_MOUSE_LL, ctypes.cast(_MOUSE_HOOK_PROC, ctypes.c_void_p),
+            kernel32.GetModuleHandleW(None), 0)
+    except Exception as e:
+        log(f"Блокировка мыши: ошибка установки хука: {e}")
+        hook = 0
+    if not hook:
+        log("Блокировка мыши недоступна — продолжаем без неё.")
+        _MOUSE_BLOCK["thread_id"] = 0
+        return
+    _MOUSE_BLOCK["hook"] = hook
+    log("Мышь заблокирована на время конвертации "
+        "(клавиатура активна; остановка — Ctrl+Alt+0).")
+    try:
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            pass
+    except Exception as e:
+        log(f"Блокировка мыши: поток хука: {e}")
+    finally:
+        try:
+            user32.UnhookWindowsHookEx(ctypes.c_void_p(hook))
+        except Exception:
+            pass
+        _MOUSE_BLOCK["hook"] = 0
+        _MOUSE_BLOCK["thread_id"] = 0
+        _MOUSE_BLOCK["thread"] = None
+        log("Блокировка мыши снята.")
+
+
+def start_mouse_block(enable=True):
+    """Включает блокировку мыши (клавиатура не блокируется)."""
+    thread = _MOUSE_BLOCK["thread"]
+    if thread is not None and thread.is_alive():
+        _MOUSE_BLOCK["enabled"] = enable
+        return True
+    _MOUSE_BLOCK["enabled"] = enable
+    thread = threading.Thread(target=_mouse_block_loop,
+                              name="mouse-block", daemon=True)
+    _MOUSE_BLOCK["thread"] = thread
+    thread.start()
+    for _ in range(100):
+        if _MOUSE_BLOCK["thread_id"]:
+            return True
+        if not thread.is_alive():
+            return False
+        time.sleep(0.01)
+    return bool(_MOUSE_BLOCK["thread_id"])
+
+
+def stop_mouse_block():
+    """Выключает блокировку мыши (события снова проходят) и гасит поток."""
+    _MOUSE_BLOCK["enabled"] = False
+    thread_id = _MOUSE_BLOCK["thread_id"]
+    thread = _MOUSE_BLOCK["thread"]
+    if not thread_id:
+        return
+    try:
+        ctypes.windll.user32.PostThreadMessageW(thread_id, _WM_QUIT, 0, 0)
+    except Exception:
+        pass
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=2.0)
 
 
 _RAW_SEND = keyboard.send
@@ -873,7 +988,17 @@ def focus_description(hwnd):
 
 
 def click_window_caption(hwnd):
-    """Кликает по заголовку окна: активирует его, не трогая документ."""
+    """Активирует окно кликом по заголовку — БЕЗ физической мыши.
+
+    Раньше здесь был настоящий клик (SetCursorPos + mouse_event). Это была
+    гонка с пользователем: если он в моменте двигал мышью, курсор уезжал с
+    заголовка, и клик попадал в чужое окно (трей → микшер громкости, панель
+    задач), отбирая фокус у Schemagee — команды «улетали в никуда».
+
+    Теперь WM_NCLBUTTONDOWN/UP с HTCAPTION отправляются самому окну: тот же
+    «клик по заголовку» для Windows, но курсор не трогается и промахнуться
+    в чужое окно невозможно.
+    """
     try:
         if not win32gui.IsWindowVisible(hwnd) or win32gui.IsIconic(hwnd):
             return False
@@ -888,8 +1013,7 @@ def click_window_caption(hwnd):
         return False
     x = (left + right) // 2
     y = top + 8
-    # Защита от «слепого» клика: окно могло оказаться вне экрана, и тогда
-    # нажатие попало бы в чужое окно (панель задач, микшер и т. п.).
+    # Защита от «слепого» клика: окно могло оказаться вне экрана.
     try:
         screen_w = ctypes.windll.user32.GetSystemMetrics(0)
         screen_h = ctypes.windll.user32.GetSystemMetrics(1)
@@ -897,16 +1021,16 @@ def click_window_caption(hwnd):
         screen_w, screen_h = 0, 0
     if not (0 <= x < screen_w and 0 <= y < screen_h):
         return False
-    user32 = ctypes.windll.user32
+    WM_NCLBUTTONDOWN = 0x00A1
+    WM_NCLBUTTONUP = 0x00A2
+    HTCAPTION = 2
+    lparam = (int(y) << 16) | (int(x) & 0xFFFF)
     try:
-        user32.SetCursorPos(int(x), int(y))
-        time.sleep(0.05)
-        user32.mouse_event(0x0002, 0, 0, 0, 0)   # LEFTDOWN
-        time.sleep(0.05)
-        user32.mouse_event(0x0004, 0, 0, 0, 0)   # LEFTUP
+        win32gui.PostMessage(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, lparam)
+        win32gui.PostMessage(hwnd, WM_NCLBUTTONUP, HTCAPTION, lparam)
     except Exception:
         return False
-    log(f"  Клик по заголовку окна hwnd={hwnd} ({x}, {y}) для фокуса.")
+    log(f"  Активация кликом по заголовку (сообщение) hwnd={hwnd} ({x}, {y}).")
     return True
 
 
@@ -914,8 +1038,9 @@ def give_keyboard_focus(hwnd, timeout=2.5):
     """Отдаёт окну Schemagee клавиатурный фокус и ПРОВЕРЯЕТ результат.
 
     Порядок: SetForegroundWindow + SetFocus из потока-владельца (через
-    AttachThreadInput), затем — клик по заголовку окна. Без подтверждённого
-    фокуса Ctrl+P/Shift+D уходят в чужое окно, и лист молча пропускается.
+    AttachThreadInput), затем — клик по заголовку сообщением (без физической
+    мыши). Без подтверждённого фокуса Ctrl+P/Shift+D уходят в чужое окно, и
+    лист молча пропускается.
     """
     pid = window_pid(hwnd)
     if not pid:
@@ -3555,6 +3680,7 @@ def run_gui():
 
     def close_app(code=0):
         result["code"] = code
+        stop_mouse_block()
         try:
             keyboard.clear_all_hotkeys()
         except Exception:
@@ -3571,6 +3697,7 @@ def run_gui():
     save_log_var = tk.BooleanVar(value=bool(ui_settings.get("save_log", False)))
     delete_var = tk.BooleanVar(value=bool(ui_settings.get("delete_dxf", True)))
     report_var = tk.BooleanVar(value=bool(ui_settings.get("show_report", True)))
+    mouse_block_var = tk.BooleanVar(value=bool(ui_settings.get("block_mouse", True)))
     dark_default = str(ui_settings.get("theme", "dark")) != "light"
     format_var = tk.BooleanVar(value=False)  # выбрать формат листа вручную
     format_value = tk.StringVar(value="A3")  # формат при ручном выборе
@@ -4134,8 +4261,8 @@ def run_gui():
         win.configure(bg=WIN11_BG)
         apply_icon(win)
         win.transient(root)
-        _center(win, 560, 400)
-        card_s = _card(win, 500, 340)
+        _center(win, 560, 440)
+        card_s = _card(win, 500, 380)
 
         tk.Label(card_s, text="Параметры",
                  font=("Segoe UI Variable Display", 15, "bold"),
@@ -4152,6 +4279,9 @@ def run_gui():
         def report_cmd():
             update_setting("show_report", report_var.get())
 
+        def block_mouse_cmd():
+            update_setting("block_mouse", mouse_block_var.get())
+
         make_check(card_s, "Сохранять журнал конвертирования",
                    save_log_var, save_log_cmd).pack(
             anchor="w", padx=40, pady=(2, 0))
@@ -4160,6 +4290,9 @@ def run_gui():
             anchor="w", padx=40, pady=(6, 0))
         make_check(card_s, "Выводить отчёт по завершении",
                    report_var, report_cmd).pack(
+            anchor="w", padx=40, pady=(6, 0))
+        make_check(card_s, "Блокировать мышь во время конвертации",
+                   mouse_block_var, block_mouse_cmd).pack(
             anchor="w", padx=40, pady=(6, 0))
 
         btns = tk.Frame(card_s, bg=WIN11_CARD_BG)
@@ -4550,6 +4683,10 @@ def run_gui():
                     if kind != "success":
                         emit(kind, payload)
 
+                # Мышь блокируем только на время самой конвертации: диалоги
+                # («Schemagee уже открыт», отчёты) должны оставаться кликабельными.
+                if mouse_block_var.get():
+                    start_mouse_block()
                 try:
                     stats = run_pipeline(path, manual_count, inner,
                                          delete_dxf=delete_dxf,
@@ -4566,6 +4703,8 @@ def run_gui():
                         "error": f"{type(e).__name__}: {e}",
                         "out_dir": "",
                     })
+                finally:
+                    stop_mouse_block()
 
             kind = report_kind_for(results)
             if kind == "batch":
@@ -4582,6 +4721,7 @@ def run_gui():
             emit("error", f"{type(e).__name__}: {e}")
         finally:
             _PIPELINE_STATE["running"] = False
+            stop_mouse_block()
             try:
                 # Остановка уже случилась — закрываем Schemagee, не прерываясь.
                 with stop_suspended():
