@@ -449,7 +449,7 @@ SAVE_DIALOG_TIMEOUT = 8.0     # ожидание диалога "Сохране�
 FILE_APPEAR_TIMEOUT = 25.0    # ожидание появления DXF на диске
 SHEET_ATTEMPTS = 3            # попыток сохранить один лист
 MAX_RECOVERIES = 3            # перезапусков Schemagee на один файл
-SHEET_OPEN_PAUSE = 1.5        # после появления окна Schemagee (отрисовка)
+SHEET_OPEN_PAUSE = 2.5        # после появления окна Schemagee (отрисовка)
 SHEET_RETRY_PAUSE = 0.8       # между попытками одного листа
 SHEET_NEXT_PAUSE = 0.3        # перед Page Down
 PAGE_TURN_PAUSE = 1.0         # после Page Down (следующий лист)
@@ -1702,6 +1702,7 @@ def reopen_schemagee(path, sheet_num):
         log("  Окно Schemagee не появилось после перезапуска.")
         return 0
     wait_window_ready(hwnd, timeout=10.0)
+    wait_schemagee_ready(hwnd, timeout=60.0)
     ensure_foreground(hwnd, what="Schemagee")
     switch_to_english(hwnd)
     pause(SHEET_OPEN_PAUSE)
@@ -1713,6 +1714,33 @@ def reopen_schemagee(path, sheet_num):
     _OWNED_SCHEMAGEE["opened"] = True
     log("  Schemagee перезапущен.")
     return hwnd
+
+
+def wait_schemagee_ready(hwnd, timeout=60.0, stable=3, interval=0.5):
+    """Ждёт, пока Schemagee закончит открытие документа и начнёт отвечать.
+
+    После появления окна приложение ещё читает файл: если отправить
+    команду сразу, она теряется и процесс «стоит». Ждём несколько подряд
+    успешных откликов на WM_NULL и отсутствия модальных окон.
+    """
+    end = time.time() + timeout
+    good = 0
+    while time.time() < end:
+        check_stop()
+        if not _is_alive(hwnd):
+            return False
+        ok = window_responsive(hwnd, timeout_ms=1500)
+        if ok:
+            popup, _title = schemagee_popup(hwnd, timeout=0.2)
+            ok = popup is None
+        if ok:
+            good += 1
+            if good >= stable:
+                return True
+        else:
+            good = 0
+        short_sleep(interval)
+    return False
 
 
 def log_recent_files(folder, since, limit=6):
@@ -2808,6 +2836,13 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
         f"(появилось за {format_time(time.time() - t_open)} сек)")
     _OWNED_SCHEMAGEE["opened"] = True
     wait_window_ready(hwnd, timeout=10.0)
+    t_ready = time.time()
+    if wait_schemagee_ready(hwnd, timeout=60.0):
+        log(f"Schemagee готов к работе "
+            f"(через {format_time(time.time() - t_ready)} сек после окна).")
+    else:
+        log("ВНИМАНИЕ: Schemagee не подтвердил готовность за 60 с — "
+            "продолжаем, но первая команда может потеряться.")
     ensure_foreground(hwnd, what="Schemagee")
     log(f"Активное окно: {foreground_title()}")
     switch_to_english(hwnd)
@@ -3172,6 +3207,8 @@ def run_gui():
         "#0067C0": "#3B7EA1",   # акцент
         "#1A7DD8": "#4A90B8",   # акцент (наведение)
         "#E0E0E0": "#454545",   # границы
+        "#E5E5E5": "#3A3A3A",   # вторичная кнопка
+        "#D6D6D6": "#4A4A4A",   # вторичная кнопка (наведение)
         "#107C10": "#7FB37F",   # успех
         "#F5F5F5": "#2F2F2F",   # зона перетаскивания
         "#D0D0D0": "#4A4A4A",   # рамка зоны
@@ -3424,7 +3461,8 @@ def run_gui():
                     if bg in ("#0067C0", "#1A7DD8", "#3B7EA1", "#4A90B8"):
                         child.configure(fg="#FFFFFF",
                                         activeforeground="#FFFFFF")
-                    elif bg in ("#E0E0E0", "#454545"):
+                    elif bg in ("#E0E0E0", "#E5E5E5", "#D6D6D6",
+                                "#454545", "#3A3A3A", "#4A4A4A"):
                         child.configure(fg=colors["subtext"],
                                         activeforeground=colors["subtext"])
                 fix_buttons(child)
