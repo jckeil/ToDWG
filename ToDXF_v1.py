@@ -3067,7 +3067,7 @@ def run_gui():
         hint_var.set("")
 
     tk.Label(card, text=APP_INNER_TEXT, font=FONT_TITLE,
-             bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(18, 2))
+             bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(43, 2))
     tk.Label(card, text="Сохраняет каждый лист в DXF и собирает альбом в DWG",
              font=FONT_BODY, bg=WIN11_CARD_BG,
              fg=WIN11_SUBTEXT).pack(pady=(0, 18))
@@ -3320,10 +3320,12 @@ def run_gui():
     manual_row.pack(anchor="w")
     make_check(manual_row, "Указать количество листов вручную", manual_var,
                on_toggle).pack(side="left")
-    spin = tk.Spinbox(manual_row, from_=1, to=500, width=5,
-                      font=FONT_BODY, textvariable=count_var,
-                      state="disabled", justify="center", relief="solid",
-                      bd=1)
+    spin = tk.Spinbox(manual_row, from_=1, to=500, width=4,
+                      font=FONT_BODY_SM, textvariable=count_var,
+                      state="disabled", justify="center", relief="flat",
+                      bd=0, highlightthickness=1,
+                      highlightbackground=WIN11_BORDER,
+                      highlightcolor=WIN11_BORDER)
     spin.pack(side="left", padx=(12, 0))
 
     make_check(opts, "Удалять .dxf файлы после конвертации",
@@ -3344,6 +3346,29 @@ def run_gui():
                                 state="disabled", width=15,
                                 textvariable=orient_value)
     orient_combo.pack(side="left", padx=(6, 0))
+
+    def style_dropdown(event):
+        """Фон выпадающего списка — по текущей теме (light/dark)."""
+        combo = event.widget
+        if theme_state["dark"]:
+            bg, fg = "#333333", "#E6E6E6"
+            sel_bg, sel_fg = "#3B7EA1", "#FFFFFF"
+        else:
+            bg, fg = "#FFFFFF", "#1A1A1A"
+            sel_bg, sel_fg = "#0067C0", "#FFFFFF"
+        try:
+            popdown = combo.tk.call("ttk::combobox::PopdownWindow",
+                                    str(combo))
+            listbox = f"{popdown}.f.l"
+            combo.tk.call(listbox, "configure",
+                          "-background", bg, "-foreground", fg,
+                          "-selectbackground", sel_bg,
+                          "-selectforeground", sel_fg)
+        except Exception as e:
+            log(f"Оформление списка: {e}")
+
+    format_combo.bind("<<ComboboxDropdown>>", style_dropdown)
+    orient_combo.bind("<<ComboboxDropdown>>", style_dropdown)
 
     red_top = tk.Label(
         card, text="НЕ ИСПОЛЬЗУЙТЕ КОМПЬЮТЕР ДО ОКОНЧАНИЯ КОНВЕРТАЦИИ",
@@ -3411,11 +3436,15 @@ def run_gui():
                 selectbackground="#3A3A3A", selectforeground="#E6E6E6")
             style.map(
                 "TCombobox",
-                fieldbackground=[("readonly", "#3A3A3A"),
+                fieldbackground=[("disabled", "#2E2E2E"),
+                                 ("readonly", "#3A3A3A"),
                                  ("active", "#3A3A3A")],
-                background=[("readonly", "#3A3A3A"), ("active", "#3A3A3A")],
-                foreground=[("readonly", "#E6E6E6"), ("active", "#E6E6E6")],
-                arrowcolor=[("readonly", "#E6E6E6"), ("active", "#E6E6E6")],
+                background=[("disabled", "#2E2E2E"),
+                            ("readonly", "#3A3A3A"), ("active", "#3A3A3A")],
+                foreground=[("disabled", "#7F7F7F"),
+                            ("readonly", "#E6E6E6"), ("active", "#E6E6E6")],
+                arrowcolor=[("disabled", "#6A6A6A"),
+                            ("readonly", "#E6E6E6"), ("active", "#E6E6E6")],
                 selectbackground=[("readonly", "#3A3A3A")],
                 selectforeground=[("readonly", "#E6E6E6")])
             style.configure("Vertical.TScrollbar", background="#3A3A3A",
@@ -3432,7 +3461,7 @@ def run_gui():
                            buttonbackground="#3A3A3A",
                            highlightbackground="#4A4A4A",
                            highlightcolor="#4A4A4A",
-                           relief="solid", bd=1)
+                           relief="flat", bd=0, highlightthickness=1)
         else:
             style.configure("TCombobox", fieldbackground="#FFFFFF",
                             background="#FFFFFF", foreground="#1A1A1A",
@@ -3441,10 +3470,14 @@ def run_gui():
                             selectbackground="#FFFFFF",
                             selectforeground="#1A1A1A")
             style.map("TCombobox",
-                      fieldbackground=[("readonly", "#FFFFFF")],
-                      background=[("readonly", "#FFFFFF")],
-                      foreground=[("readonly", "#1A1A1A")],
-                      arrowcolor=[("readonly", "#5C5C5C")])
+                      fieldbackground=[("disabled", "#F0F0F0"),
+                                       ("readonly", "#FFFFFF")],
+                      background=[("disabled", "#F0F0F0"),
+                                  ("readonly", "#FFFFFF")],
+                      foreground=[("disabled", "#A0A0A0"),
+                                  ("readonly", "#1A1A1A")],
+                      arrowcolor=[("disabled", "#A0A0A0"),
+                                  ("readonly", "#5C5C5C")])
             style.configure("Vertical.TScrollbar", background="#F0F0F0",
                             troughcolor="#FFFFFF", arrowcolor="#5C5C5C",
                             bordercolor="#D0D0D0", lightcolor="#FFFFFF",
@@ -3456,7 +3489,7 @@ def run_gui():
                            buttonbackground="#F0F0F0",
                            highlightbackground="#B0B0B0",
                            highlightcolor="#B0B0B0",
-                           relief="solid", bd=1)
+                           relief="flat", bd=0, highlightthickness=1)
 
         render_pending()
 

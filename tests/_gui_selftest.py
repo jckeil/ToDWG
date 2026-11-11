@@ -96,10 +96,15 @@ def mainloop_stub(self, n=0):
                        bool(canvas.bind("<MouseWheel>"))))
 
     if dark is not None:
-        report.append(("theme_light", self.cget("bg"), card.cget("bg")))
+        style = ttk.Style()
+        report.append(("theme_light", self.cget("bg"), card.cget("bg"),
+                       spin.cget("bg") if spin is not None else "-",
+                       style.lookup("TCombobox", "fieldbackground")))
         dark.event_generate("<Button-1>", x=5, y=5)
         self.update()
-        report.append(("theme_dark", self.cget("bg"), card.cget("bg")))
+        report.append(("theme_dark", self.cget("bg"), card.cget("bg"),
+                       spin.cget("bg") if spin is not None else "-",
+                       style.lookup("TCombobox", "fieldbackground")))
         dark.event_generate("<Button-1>", x=5, y=5)
         self.update()
         report.append(("theme_back", self.cget("bg"), card.cget("bg")))
