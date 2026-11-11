@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # =============================================================================
 #
 #   ToDXF v1.0
@@ -478,6 +478,10 @@ _OWNED_SCHEMAGEE = {"opened": False}
 # Состояние конвейера — нужно сторожевому таймеру экстренной остановки.
 _PIPELINE_STATE = {"running": False}
 
+# Ответ пользователя на вопрос «Schemagee уже открыт — закрыть?».
+# Кликер работает в фоновом потоке, диалог показывает UI-поток.
+_ASK_SCHEMAGEE = {"event": threading.Event(), "answer": False}
+
 # Временно игнорировать остановку (когда мы УЖЕ останавливаемся и закрываем
 # Schemagee, новые TaskStopped только помешали бы навести порядок).
 _STOP_SUSPEND = {"depth": 0}
@@ -612,6 +616,24 @@ def start_stop_hotkey():
             user32.UnregisterHotKey(None, 1)
 
     threading.Thread(target=loop, name="stop-hotkey", daemon=True).start()
+
+
+_RAW_SEND = keyboard.send
+
+
+def send_keys(keys):
+    """Отправляет сочетание, предварительно отпустив залипшие модификаторы.
+
+    Если предыдущая команда прервалась (например, окно было занято), Ctrl/Alt/
+    Shift могли остаться «нажатыми» — тогда следующие нажатия превращаются в
+    чужие горячие клавиши. Перед отправкой всегда отпускаем их.
+    """
+    for mod in ("ctrl", "alt", "shift", "windows"):
+        try:
+            keyboard.release(mod)
+        except Exception:
+            pass
+    _RAW_SEND(keys)
 
 
 def _is_alive(hwnd):
@@ -784,6 +806,8 @@ def focus_description(hwnd):
 def click_window_caption(hwnd):
     """Кликает по заголовку окна: активирует его, не трогая документ."""
     try:
+        if not win32gui.IsWindowVisible(hwnd) or win32gui.IsIconic(hwnd):
+            return False
         rect = win32gui.GetWindowRect(hwnd)
         style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)
     except Exception:
@@ -795,6 +819,15 @@ def click_window_caption(hwnd):
         return False
     x = (left + right) // 2
     y = top + 8
+    # Защита от «слепого» клика: окно могло оказаться вне экрана, и тогда
+    # нажатие попало бы в чужое окно (панель задач, микшер и т. п.).
+    try:
+        screen_w = ctypes.windll.user32.GetSystemMetrics(0)
+        screen_h = ctypes.windll.user32.GetSystemMetrics(1)
+    except Exception:
+        screen_w, screen_h = 0, 0
+    if not (0 <= x < screen_w and 0 <= y < screen_h):
+        return False
     user32 = ctypes.windll.user32
     try:
         user32.SetCursorPos(int(x), int(y))
@@ -804,6 +837,7 @@ def click_window_caption(hwnd):
         user32.mouse_event(0x0004, 0, 0, 0, 0)   # LEFTUP
     except Exception:
         return False
+    log(f"  Клик по заголовку окна hwnd={hwnd} ({x}, {y}) для фокуса.")
     return True
 
 
@@ -955,7 +989,7 @@ def send_hotkey_until(hwnd, keys, finder, what="диалог", attempts=3,
         ensure_schemagee_active(hwnd, what="Schemagee")
         log(f"  Отправляем {keys} (попытка {attempt}/{attempts}); "
             f"фокус: {focus_description(hwnd)}")
-        keyboard.send(keys)
+        send_keys(keys)
         found = finder(timeout=timeouts[min(attempt - 1, len(timeouts) - 1)])
         if found:
             return found
@@ -1270,7 +1304,7 @@ def close_schemagee_popup(main_hwnd, timeout=3.0, look=1.5):
             return True
         # Не поддалось — активируем и жмём Enter именно в него.
         if force_foreground(popup, timeout=1.5):
-            keyboard.send('enter')
+            send_keys('enter')
             if wait_dialog_close(popup, timeout=2.0):
                 return True
         log(f"  ВНИМАНИЕ: окно {title!r} не закрылось — отправляем Esc.")
@@ -1395,9 +1429,9 @@ def press_export_button(main_hwnd, look=1.5, note="Экспорт"):
 
         # Как в старом кликере: активировать окно и нажать Tab+Enter.
         if force_foreground(form, timeout=1.5):
-            keyboard.send('tab')
+            send_keys('tab')
             pause(0.2)
-            keyboard.send('enter')
+            send_keys('enter')
             if wait_dialog_close(form, timeout=2.0):
                 return True
 
@@ -1464,9 +1498,9 @@ def _type_save_path(edit_hwnd, path):
     if not force_foreground(edit_hwnd, timeout=1.5):
         log("  Не удалось активировать поле пути.")
         return False
-    keyboard.send('ctrl+a')
+    send_keys('ctrl+a')
     pause(0.2)
-    keyboard.send('ctrl+v')
+    send_keys('ctrl+v')
     pause(0.4)
     current = _control_text(edit_hwnd).strip()
     if current == path.strip():
@@ -1521,7 +1555,7 @@ def _cancel_dialog_now(dialog_hwnd):
         if not win32gui.IsWindow(dialog_hwnd):
             return
         force_foreground(dialog_hwnd, timeout=1.0)
-        keyboard.send('esc')
+        send_keys('esc')
         if wait_dialog_close(dialog_hwnd, timeout=2.0):
             return
         win32gui.PostMessage(dialog_hwnd, win32con.WM_KEYDOWN,
@@ -1745,13 +1779,13 @@ def read_sheet_count_from_print_dialog():
 
     for _ in range(PRINT_DIALOG_TAB_COUNT):
         check_stop()
-        keyboard.send('tab')
+        send_keys('tab')
         time.sleep(TAB_SETTLE)
     pause(0.3)
 
-    keyboard.send('ctrl+a')
+    send_keys('ctrl+a')
     pause(0.2)
-    keyboard.send('ctrl+c')
+    send_keys('ctrl+c')
     pause(0.45)
 
     copied = ""
@@ -1825,7 +1859,7 @@ def switch_to_english(hwnd=None):
         current_hkl = ctypes.windll.user32.GetKeyboardLayout(target_thread)
         if (current_hkl & 0xFFFF) != 0x0409:
             force_foreground(hwnd)
-            keyboard.send('alt+shift')
+            send_keys('alt+shift')
             time.sleep(0.25)
         log("Раскладка переключена на английскую.")
     except Exception as e:
@@ -1876,14 +1910,14 @@ def close_schemagee(timeout=8.0):
             f"(активно: {foreground_title()}). Закройте его вручную — "
             "Alt+F4 в чужое окно не отправляем.")
         return False
-    keyboard.send('alt+f4')
+    send_keys('alt+f4')
     time.sleep(0.8)
 
     dialog = find_modal_dialog(timeout=1.5)
     if dialog:
         log("  Появился вопрос о сохранении — отвечаем «Нет».")
         force_foreground(dialog, timeout=1.0)
-        keyboard.send('n')
+        send_keys('n')
         time.sleep(0.3)
     else:
         log("  Вопроса о сохранении не было.")
@@ -1973,7 +2007,7 @@ def reopen_schemagee(path, sheet_num):
     for _ in range(max(0, sheet_num - 1)):
         check_stop()
         ensure_schemagee_active(hwnd, what="Schemagee")
-        keyboard.send('page down')
+        send_keys('page down')
         pause(PAGE_TURN_PAUSE)
     _OWNED_SCHEMAGEE["opened"] = True
     log("  Schemagee перезапущен.")
@@ -2084,7 +2118,7 @@ def start_save_dialog(main_hwnd):
     """
     check_stop()
     if not main_hwnd:
-        keyboard.send('shift+d')
+        send_keys('shift+d')
         return find_save_dialog(timeout=SAVE_DIALOG_TIMEOUT) or 0
 
     for attempt in range(1, SAVE_OPEN_ATTEMPTS + 1):
@@ -2092,7 +2126,7 @@ def start_save_dialog(main_hwnd):
         ensure_schemagee_active(main_hwnd, what="Schemagee")
         log(f"  Shift+D: открываем экспорт (попытка {attempt}/"
             f"{SAVE_OPEN_ATTEMPTS}); фокус: {focus_description(main_hwnd)}")
-        keyboard.send('shift+d')
+        send_keys('shift+d')
         kind, target = wait_save_or_export(main_hwnd, timeout=EXPORT_FORM_TIMEOUT)
 
         if kind == "save":
@@ -2294,7 +2328,7 @@ def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None)
                 )
             ensure_schemagee_active(hwnd, what="Schemagee")
             pause(SHEET_NEXT_PAUSE)
-            keyboard.send('page down')
+            send_keys('page down')
             pause(PAGE_TURN_PAUSE)
 
         log(f"  Лист обработан за "
@@ -3127,6 +3161,20 @@ def write_result_json(run_dir, payload):
         log(f"Не удалось записать result.json: {e}")
 
 
+def report_kind_for(results):
+    """Какой отчёт показать по итогам работы: success / batch / error / None.
+
+    Раньше ошибка одного файла попадала в results и показывалась как
+    «АЛЬБОМ СОБРАН» — то есть программа сообщала об успехе, когда ничего
+    не было сделано. Теперь тип отчёта зависит от содержимого результата.
+    """
+    if not results:
+        return None
+    if len(results) > 1:
+        return "batch"
+    return "error" if results[0].get("error") else "success"
+
+
 def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
                  paper_w=PAPER_W, paper_h=PAPER_H):
     """Полный цикл: открыть .sdd, сохранить листы, собрать DWG, отдать отчёт."""
@@ -3544,6 +3592,8 @@ def run_gui():
             widget.dnd_bind("<<Drop>>", on_drop)
 
     pending = []
+    # Последний запущенный список файлов: возвращается в окно при отмене.
+    _LAST_PATHS = {"paths": []}
     theme_state = {"dark": False}
 
     LIGHT_TO_DARK = {
@@ -3665,6 +3715,9 @@ def run_gui():
         paths = list(pending)
         pending.clear()
         refresh_pending()
+        # Сохраняем список: если пользователь отменит работу (например,
+        # открыт Schemagee), файлы вернутся в окно, а не пропадут.
+        _LAST_PATHS["paths"] = list(paths)
         start_work(paths, manual_count)
 
     buttons = tk.Frame(card, bg=WIN11_CARD_BG)
@@ -3986,6 +4039,67 @@ def run_gui():
         prog["win"] = win
         prog["label"] = lbl
 
+    def back_to_main():
+        """Возвращает пользователя в главное окно (после отмены работы)."""
+        hide_progress()
+        # Файлы, взятые в работу, возвращаем в список — иначе пользователю
+        # придётся выбирать их заново.
+        if _LAST_PATHS["paths"]:
+            add_files(_LAST_PATHS["paths"])
+            _LAST_PATHS["paths"] = []
+        try:
+            root.deiconify()
+            root.lift()
+            root.focus_force()
+        except Exception:
+            pass
+
+    def show_ask_schemagee(titles):
+        """Спрашивает: закрыть уже открытый Schemagee и продолжить?"""
+        show_progress("Schemagee уже открыт")
+        win = tk.Toplevel(root)
+        win.title("Schemagee уже открыт")
+        win.resizable(False, False)
+        win.configure(bg=WIN11_BG)
+        apply_icon(win)
+        win.protocol("WM_DELETE_WINDOW", lambda: answer(False))
+        _center(win, 660, 420)
+        card_a = _card(win, 600, 360)
+
+        tk.Label(card_a, text="Schemagee уже запущен",
+                 font=("Segoe UI Variable Display", 15, "bold"),
+                 bg=WIN11_CARD_BG, fg=WIN11_DANGER).pack(pady=(20, 8))
+        tk.Frame(card_a, bg=WIN11_BORDER, height=1).pack(fill="x", padx=26,
+                                                         pady=(0, 10))
+        tk.Label(
+            card_a,
+            text="Чтобы конвертировать файл, Schemagee нужно закрыть: иначе "
+                 "программа будет сохранять листы чужого документа.\n\n"
+                 f"Открытые окна: {titles}\n\n"
+                 "Если в Schemagee есть несохранённые изменения, сначала "
+                 "сохраните их вручную — при закрытии они будут потеряны.",
+            font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
+            wraplength=520, justify="left").pack(anchor="w", padx=30)
+
+        btns = tk.Frame(card_a, bg=WIN11_CARD_BG)
+        btns.pack(side="bottom", pady=(14, 24))
+
+        def answer(ok):
+            _ASK_SCHEMAGEE["answer"] = ok
+            _ASK_SCHEMAGEE["event"].set()
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        _button(btns, "Закрыть Schemagee и продолжить",
+                lambda: answer(True)).pack(side="left", padx=(0, 10))
+        _button(btns, "Отмена", lambda: answer(False)).pack(side="left")
+
+        apply_theme_tree(win, theme_state["dark"])
+        win.attributes("-topmost", True)
+        win.focus_force()
+
     def show_success(stats):
         hide_progress()
         win = tk.Toplevel(root)
@@ -4005,23 +4119,26 @@ def run_gui():
 
         tk.Label(card_s, text="Исходный файл:", font=FONT_BODY_SM,
                  bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(anchor="w", padx=36)
-        tk.Label(card_s, text=os.path.basename(stats["source"]), font=FONT_BODY,
+        tk.Label(card_s, text=os.path.basename(str(stats.get("source") or "?")),
+                 font=FONT_BODY,
                  bg=WIN11_CARD_BG, fg=WIN11_TEXT, wraplength=640,
                  justify="left").pack(anchor="w", padx=36, pady=(0, 10))
 
         info = tk.Frame(card_s, bg=WIN11_CARD_BG)
         info.pack(fill="x", padx=36, anchor="w")
-        _row(info, "Листов:", f"{stats['sheet_count']} "
-                              f"({stats['sheet_count_source']})", 0)
-        _row(info, "Экспорт листов:", format_duration(stats["conv_time"]), 1)
-        _row(info, "Сборка альбома:", format_duration(stats["merge_time"]), 2)
-        _row(info, "Схем в альбоме:", str(stats["placed"]), 3)
-        _row(info, "Ошибок:", str(stats["errors"]), 4)
+        _row(info, "Листов:", f"{stats.get('sheet_count', 0)} "
+                              f"({stats.get('sheet_count_source', '—')})", 0)
+        _row(info, "Экспорт листов:",
+             format_duration(stats.get("conv_time", 0.0)), 1)
+        _row(info, "Сборка альбома:",
+             format_duration(stats.get("merge_time", 0.0)), 2)
+        _row(info, "Схем в альбоме:", str(stats.get("placed", 0)), 3)
+        _row(info, "Ошибок:", str(stats.get("errors", 0)), 4)
 
         tk.Label(card_s, text="Результат:", font=FONT_BODY_SM, bg=WIN11_CARD_BG,
                  fg=WIN11_SUBTEXT).pack(anchor="w", padx=36, pady=(12, 2))
-        size_kb = stats["target_size"] / 1024.0
-        tk.Label(card_s, text=f"{stats['target']}  ({size_kb:.1f} КБ)",
+        size_kb = float(stats.get("target_size", 0)) / 1024.0
+        tk.Label(card_s, text=f"{stats.get('target', '—')}  ({size_kb:.1f} КБ)",
                  font=FONT_BODY, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
                  wraplength=640, justify="left").pack(anchor="w", padx=36)
 
@@ -4162,10 +4279,21 @@ def run_gui():
                 except Exception:
                     pass
         elif kind == "success":
-            if report_var.get():
-                show_success(payload)
+            if payload and payload.get("error"):
+                show_error(payload["error"])
+            elif report_var.get():
+                show_success(payload or {})
             else:
                 close_app(0)
+        elif kind == "ask_schemagee":
+            try:
+                show_ask_schemagee(payload or "")
+            except Exception:
+                log("Ошибка окна вопроса о Schemagee:\n" + traceback.format_exc())
+                _ASK_SCHEMAGEE["answer"] = False
+                _ASK_SCHEMAGEE["event"].set()
+        elif kind == "back_to_main":
+            back_to_main()
         elif kind == "batch":
             if report_var.get():
                 show_batch(payload)
@@ -4187,6 +4315,36 @@ def run_gui():
             log("Ошибка в UI-потоке:\n" + traceback.format_exc())
         root.after(100, poll)
 
+    def ask_close_schemagee():
+        """Спрашивает у пользователя, можно ли закрыть уже открытый Schemagee.
+
+        Работать с открытым Schemagee нельзя: скрипт начнёт сохранять листы
+        чужого документа. Молча падать тоже нельзя — пользователь должен
+        понять, что происходит, и решить: закрыть Schemagee или вернуться.
+        """
+        already = schemagee_windows()
+        if not already:
+            return True
+        titles = "; ".join(t for _, t in already if t) or "без названия"
+        log("Schemagee уже открыт: " + titles)
+        _ASK_SCHEMAGEE["answer"] = False
+        _ASK_SCHEMAGEE["event"].clear()
+        emit("ask_schemagee", titles)
+        if not _ASK_SCHEMAGEE["event"].wait(timeout=300):
+            log("Ответ на вопрос о Schemagee не получен — отменяем работу.")
+            return False
+        if not _ASK_SCHEMAGEE["answer"]:
+            log("Пользователь отменил: Schemagee остаётся открытым.")
+            return False
+        emit("progress", "Закрываем Schemagee…")
+        with stop_suspended():
+            close_schemagee(timeout=10.0)
+        if schemagee_windows():
+            log("Schemagee не закрылся — отменяем работу.")
+            return False
+        log("Schemagee закрыт, продолжаем.")
+        return True
+
     def worker(paths, manual_count, delete_dxf, paper_w, paper_h):
         _PIPELINE_STATE["running"] = True
         results = []
@@ -4196,6 +4354,10 @@ def run_gui():
                 if len(paths) > 1:
                     emit("progress", f"Файл {index} из {len(paths)}: "
                                      f"{os.path.basename(path)}")
+
+                if not ask_close_schemagee():
+                    emit("back_to_main")
+                    return
 
                 def inner(kind, payload=None):
                     # «success» в пакетном режиме не показываем по файлам:
@@ -4219,10 +4381,13 @@ def run_gui():
                         "out_dir": "",
                     })
 
-            if len(paths) > 1:
+            kind = report_kind_for(results)
+            if kind == "batch":
                 emit("batch", results)
-            elif results:
+            elif kind == "success":
                 emit("success", results[0])
+            elif kind == "error":
+                emit("error", results[0].get("error") or "Неизвестная ошибка.")
         except TaskStopped:
             log("ЗАДАЧА ПРЕРВАНА ПОЛЬЗОВАТЕЛЕМ.")
             emit("stopped")
