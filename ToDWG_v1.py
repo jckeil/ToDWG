@@ -192,6 +192,35 @@ def remember_dir(path):
         log(f"Не удалось запомнить папку: {e}")
 
 
+def remember_out_dir(path):
+    """Запоминает выбранную папку результата (только локальную)."""
+    try:
+        folder = os.path.normpath(str(path)).strip()
+        if not folder or is_network_path(folder) or not os.path.isdir(folder):
+            return
+        settings = load_settings()
+        if settings.get("out_dir") != folder:
+            settings["out_dir"] = folder
+            save_settings(settings)
+    except Exception as e:
+        log(f"Не удалось запомнить папку результата: {e}")
+
+
+def choose_out_dir():
+    """Папка результата по умолчанию.
+
+    Если раньше пользователь выбрал локальную папку — берём её, иначе
+    результаты пишутся рядом с программой (прежнее поведение).
+    """
+    try:
+        last = str(load_settings().get("out_dir") or "").strip()
+    except Exception:
+        last = ""
+    if last and not is_network_path(last) and os.path.isdir(last):
+        return last
+    return BASE_DIR
+
+
 def choose_start_dir():
     """С чего начинать диалог: последняя локальная папка, иначе Рабочий стол.
 
@@ -3142,10 +3171,15 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
 # БЛОК 4. СЦЕНАРИЙ: кликер + конвертер + отчёт
 # =============================================================================
 
-def make_run_folder(name):
-    """Создаёт папку запуска: <exe_dir>\\<ИМЯ>_<ГГГГ-ММ-ДД-ЧЧ-ММ-СС>."""
+def make_run_folder(name, base_dir=None):
+    """Создаёт папку запуска: <base_dir>\\<ИМЯ>_<ГГГГ-ММ-ДД-ЧЧ-ММ-СС>.
+
+    base_dir — выбранная пользователем папка результата; без неё, как и
+    раньше, результаты пишутся рядом с программой.
+    """
     stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    folder = os.path.join(BASE_DIR, f"{name}_{stamp}")
+    root = base_dir or BASE_DIR
+    folder = os.path.join(root, f"{name}_{stamp}")
     os.makedirs(folder, exist_ok=True)
     return folder
 
@@ -3176,7 +3210,7 @@ def report_kind_for(results):
 
 
 def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
-                 paper_w=PAPER_W, paper_h=PAPER_H):
+                 paper_w=PAPER_W, paper_h=PAPER_H, out_dir=None):
     """Полный цикл: открыть .sdd, сохранить листы, собрать DWG, отдать отчёт."""
     check_stop()
     _OWNED_SCHEMAGEE["opened"] = False
@@ -3278,7 +3312,7 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     log(f"Число листов: {sheet_count} (источник: {count_source})")
     check_stop()
 
-    run_dir = make_run_folder(name)
+    run_dir = make_run_folder(name, out_dir)
     attach_run_log(os.path.join(run_dir, LOG_FILENAME))
     log(f"Папка результата: {run_dir}")
 
@@ -3389,7 +3423,7 @@ def run_headless(opts):
         return 1
 
     name = opts.get("name") or derive_name_from_dxf(files)
-    run_dir = make_run_folder(name)
+    run_dir = make_run_folder(name, opts.get("out_dir"))
     attach_run_log(os.path.join(run_dir, LOG_FILENAME))
     log(f"Режим без кликера: {len(files)} DXF из {folder}")
     log(f"Папка результата: {run_dir}")
@@ -3447,7 +3481,7 @@ def run_gui():
     root.configure(bg=WIN11_BG)
     apply_icon(root)
     initial_ttk_theme = ttk.Style().theme_use()
-    _center(root, 733, 734)
+    _center(root, 733, 770)
 
     def _report_callback_exception(exc_type, exc_value, exc_tb):
         log("Ошибка в обработчике интерфейса:\n"
@@ -3455,7 +3489,7 @@ def run_gui():
 
     root.report_callback_exception = _report_callback_exception
 
-    card = _card(root, 640, 620)
+    card = _card(root, 640, 656)
     ui_queue = queue.Queue()
 
     def emit(kind, payload=None):
@@ -3484,6 +3518,8 @@ def run_gui():
     format_var = tk.BooleanVar(value=False)  # выбрать формат листа вручную
     format_value = tk.StringVar(value="A3")  # формат при ручном выборе
     orient_value = tk.StringVar(value="горизонтальный")
+    out_state = {"dir": choose_out_dir()}    # папка результата
+    outdir_var = tk.StringVar()
 
     def on_toggle():
         if manual_var.get():
@@ -3729,6 +3765,52 @@ def run_gui():
     convert_btn.config(width=14)
     convert_btn.pack(side="left")
     refresh_pending()
+
+    def short_dir(path, limit=30):
+        """Короткое отображение пути в одну строку (полный путь — в логе)."""
+        path = str(path)
+        if len(path) <= limit:
+            return path
+        return path[:10] + "…" + path[-(limit - 11):]
+
+    def refresh_outdir_label():
+        outdir_var.set(short_dir(out_state["dir"]))
+
+    def on_choose_out_dir():
+        """Выбор папки результата (только локальной — сеть может зависнуть)."""
+        initial = out_state["dir"]
+        if not os.path.isdir(initial):
+            initial = app_dir()
+        folder = filedialog.askdirectory(
+            parent=root,
+            title="Выберите папку для результата",
+            initialdir=initial,
+            mustexist=True,
+        )
+        if not folder:
+            return
+        folder = os.path.normpath(folder)
+        if is_network_path(folder):
+            hint_var.set("Выберите локальную папку: сетевая может зависнуть.")
+            return
+        out_state["dir"] = folder
+        refresh_outdir_label()
+        remember_out_dir(folder)
+        log(f"Папка результата: {folder}")
+
+    outdir_row = tk.Frame(card, bg=WIN11_CARD_BG)
+    outdir_row.pack(padx=115, pady=(12, 0), fill="x")
+    tk.Label(outdir_row, text="Папка результата:", font=FONT_BODY_SM,
+             bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="left")
+    tk.Label(outdir_row, textvariable=outdir_var, font=FONT_BODY_SM,
+             bg=WIN11_CARD_BG, fg=WIN11_TEXT, anchor="w").pack(
+        side="left", padx=(6, 8), fill="x", expand=True)
+    tk.Button(outdir_row, text="Изменить…", command=on_choose_out_dir,
+              font=FONT_BODY_SM, bg="#E5E5E5", fg=WIN11_TEXT,
+              activebackground="#D6D6D6", activeforeground=WIN11_TEXT,
+              relief="flat", bd=0, highlightthickness=0, cursor="hand2",
+              padx=10, pady=2).pack(side="right")
+    refresh_outdir_label()
 
     def on_toggle_format():
         state = "readonly" if format_var.get() else "disabled"
@@ -4345,7 +4427,7 @@ def run_gui():
         log("Schemagee закрыт, продолжаем.")
         return True
 
-    def worker(paths, manual_count, delete_dxf, paper_w, paper_h):
+    def worker(paths, manual_count, delete_dxf, paper_w, paper_h, out_dir):
         _PIPELINE_STATE["running"] = True
         results = []
         try:
@@ -4368,7 +4450,8 @@ def run_gui():
                 try:
                     stats = run_pipeline(path, manual_count, inner,
                                          delete_dxf=delete_dxf,
-                                         paper_w=paper_w, paper_h=paper_h)
+                                         paper_w=paper_w, paper_h=paper_h,
+                                         out_dir=out_dir)
                     results.append(stats)
                 except TaskStopped:
                     raise
@@ -4416,7 +4499,7 @@ def run_gui():
         paper_w, paper_h = paper_dimensions()
         threading.Thread(target=worker,
                          args=(paths, manual_count, delete_var.get(),
-                               paper_w, paper_h),
+                               paper_w, paper_h, out_state["dir"]),
                          daemon=True).start()
 
     start_stop_hotkey()
@@ -4452,6 +4535,10 @@ def parse_args(argv=None):
     parser.add_argument(
         "--headless", action="store_true",
         help="без окон: выполнить и напечатать отчёт",
+    )
+    parser.add_argument(
+        "--out-dir", default=None,
+        help="папка для результатов (по умолчанию — рядом с программой)",
     )
     return parser.parse_args(argv)
 
