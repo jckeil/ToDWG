@@ -82,9 +82,14 @@ def mainloop_stub(self, n=0):
     dark = None
     for w in walk(self):
         if isinstance(w, tk.Canvas):
-            canvas = w
-        if isinstance(w, tk.Checkbutton) and str(w.cget("text")) == "Темная тема":
-            dark = w
+            try:
+                width = int(str(w.cget("width")))
+            except Exception:
+                width = 0
+            if width == 42:
+                dark = w
+            else:
+                canvas = w
 
     if canvas is not None:
         report.append(("canvas_wheel_bound",
@@ -92,10 +97,10 @@ def mainloop_stub(self, n=0):
 
     if dark is not None:
         report.append(("theme_light", self.cget("bg"), card.cget("bg")))
-        dark.invoke()
+        dark.event_generate("<Button-1>", x=5, y=5)
         self.update()
         report.append(("theme_dark", self.cget("bg"), card.cget("bg")))
-        dark.invoke()
+        dark.event_generate("<Button-1>", x=5, y=5)
         self.update()
         report.append(("theme_back", self.cget("bg"), card.cget("bg")))
 

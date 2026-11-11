@@ -3070,7 +3070,7 @@ def run_gui():
              bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(18, 2))
     tk.Label(card, text="Сохраняет каждый лист в DXF и собирает альбом в DWG",
              font=FONT_BODY, bg=WIN11_CARD_BG,
-             fg=WIN11_SUBTEXT).pack(pady=(0, 14))
+             fg=WIN11_SUBTEXT).pack(pady=(0, 18))
 
     def read_manual_count():
         """(ok, значение): ok=False — в поле некорректное число."""
@@ -3114,7 +3114,7 @@ def run_gui():
     DROP_BORDER = "#D0D0D0"
     AREA_BG = "#FFFFFF"
 
-    files_area = tk.Frame(card, bg=DROP_BG, width=410, height=237,
+    files_area = tk.Frame(card, bg=DROP_BG, width=410, height=200,
                           highlightthickness=1,
                           highlightbackground=DROP_BORDER)
     files_area.pack(padx=115, pady=(0, 0))
@@ -3127,7 +3127,7 @@ def run_gui():
         font=FONT_BODY, bg=DROP_BG, fg=WIN11_SUBTEXT, justify="center")
     drop_placeholder.pack(expand=True)
 
-    files_canvas = tk.Canvas(files_area, bg=AREA_BG, height=235,
+    files_canvas = tk.Canvas(files_area, bg=AREA_BG, height=198,
                              highlightthickness=0, bd=0)
     files_scroll = ttk.Scrollbar(files_area, orient="vertical",
                                  command=files_canvas.yview)
@@ -3139,6 +3139,11 @@ def run_gui():
         scrollregion=files_canvas.bbox("all")))
 
     def scroll_files(event):
+        bbox = files_canvas.bbox("all")
+        if not bbox:
+            return "break"
+        if (bbox[3] - bbox[1]) <= files_canvas.winfo_height():
+            return "break"
         try:
             delta = int(-1 * (event.delta / 120))
         except Exception:
@@ -3222,7 +3227,6 @@ def run_gui():
         files_canvas.configure(bg=area_bg)
         files_box.configure(bg=area_bg)
         files_canvas.pack(side="left", fill="both", expand=True)
-        files_scroll.pack(side="right", fill="y")
         for path in pending:
             row = tk.Frame(files_box, bg=area_bg)
             row.pack(fill="x")
@@ -3237,6 +3241,13 @@ def run_gui():
             row.bind("<MouseWheel>", scroll_files)
             for widget in row.winfo_children():
                 widget.bind("<MouseWheel>", scroll_files)
+
+        files_box.update_idletasks()
+        if files_box.winfo_reqheight() > files_canvas.winfo_height():
+            files_scroll.pack(side="right", fill="y")
+        else:
+            files_scroll.pack_forget()
+            files_canvas.yview_moveto(0)
 
     def remove_file(path):
         if path in pending:
@@ -3272,7 +3283,7 @@ def run_gui():
         start_work(paths, manual_count)
 
     buttons = tk.Frame(card, bg=WIN11_CARD_BG)
-    buttons.pack(pady=(14, 0))
+    buttons.pack(pady=(20, 0))
     select_btn = _button(buttons, "Выбрать файлы", on_select)
     select_btn.config(width=14)
     select_btn.pack(side="left", padx=(0, 10))
@@ -3303,7 +3314,7 @@ def run_gui():
                               highlightthickness=0, cursor="hand2")
 
     opts = tk.Frame(card, bg=WIN11_CARD_BG)
-    opts.pack(anchor="w", padx=140, pady=(8, 0))
+    opts.pack(anchor="w", padx=140, pady=(16, 0))
 
     manual_row = tk.Frame(opts, bg=WIN11_CARD_BG)
     manual_row.pack(anchor="w")
@@ -3337,7 +3348,7 @@ def run_gui():
     red_top = tk.Label(
         card, text="НЕ ИСПОЛЬЗУЙТЕ КОМПЬЮТЕР ДО ОКОНЧАНИЯ КОНВЕРТАЦИИ",
         font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER, justify="center")
-    red_top.pack(pady=(10, 0))
+    red_top.pack(pady=(14, 0))
     tk.Label(card, text="ДЛЯ АВАРИЙНОЙ ОСТАНОВКИ НАЖМИТЕ CTRL+ALT+0",
              font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
              justify="center").pack()
@@ -3383,6 +3394,7 @@ def run_gui():
                              activebackground=colors["accent_h"],
                              activeforeground="#FFFFFF")
         paint_convert_button(bool(pending))
+        draw_toggle()
 
         style = ttk.Style()
         try:
@@ -3390,27 +3402,95 @@ def run_gui():
         except Exception:
             pass
         if dark:
-            style.configure("TCombobox", fieldbackground="#3A3A3A",
-                            background="#3A3A3A", foreground="#E6E6E6",
-                            arrowcolor="#E6E6E6")
-            style.map("TCombobox",
-                      fieldbackground=[("readonly", "#3A3A3A")],
-                      foreground=[("readonly", "#E6E6E6")])
+            style.configure(
+                "TCombobox",
+                fieldbackground="#3A3A3A", background="#3A3A3A",
+                foreground="#E6E6E6", arrowcolor="#E6E6E6",
+                bordercolor="#4A4A4A", lightcolor="#4A4A4A",
+                darkcolor="#4A4A4A", insertcolor="#E6E6E6",
+                selectbackground="#3A3A3A", selectforeground="#E6E6E6")
+            style.map(
+                "TCombobox",
+                fieldbackground=[("readonly", "#3A3A3A"),
+                                 ("active", "#3A3A3A")],
+                background=[("readonly", "#3A3A3A"), ("active", "#3A3A3A")],
+                foreground=[("readonly", "#E6E6E6"), ("active", "#E6E6E6")],
+                arrowcolor=[("readonly", "#E6E6E6"), ("active", "#E6E6E6")],
+                selectbackground=[("readonly", "#3A3A3A")],
+                selectforeground=[("readonly", "#E6E6E6")])
             style.configure("Vertical.TScrollbar", background="#3A3A3A",
                             troughcolor="#2B2B2B", arrowcolor="#A8A8A8",
-                            borderwidth=0)
+                            bordercolor="#454545", lightcolor="#3A3A3A",
+                            darkcolor="#3A3A3A", borderwidth=1,
+                            arrowsize=12)
+            root.option_add("*TCombobox*Listbox.background", "#333333")
+            root.option_add("*TCombobox*Listbox.foreground", "#E6E6E6")
+            root.option_add("*TCombobox*Listbox.selectBackground", "#3B7EA1")
+            root.option_add("*TCombobox*Listbox.selectForeground", "#FFFFFF")
+            spin.configure(bg="#3A3A3A", fg="#E6E6E6",
+                           insertbackground="#E6E6E6",
+                           buttonbackground="#3A3A3A",
+                           highlightbackground="#4A4A4A",
+                           highlightcolor="#4A4A4A",
+                           relief="solid", bd=1)
         else:
             style.configure("TCombobox", fieldbackground="#FFFFFF",
-                            background="#FFFFFF", foreground="#1A1A1A")
+                            background="#FFFFFF", foreground="#1A1A1A",
+                            arrowcolor="#5C5C5C", bordercolor="#B0B0B0",
+                            lightcolor="#FFFFFF", darkcolor="#FFFFFF",
+                            selectbackground="#FFFFFF",
+                            selectforeground="#1A1A1A")
+            style.map("TCombobox",
+                      fieldbackground=[("readonly", "#FFFFFF")],
+                      background=[("readonly", "#FFFFFF")],
+                      foreground=[("readonly", "#1A1A1A")],
+                      arrowcolor=[("readonly", "#5C5C5C")])
             style.configure("Vertical.TScrollbar", background="#F0F0F0",
-                            troughcolor="#FFFFFF", arrowcolor="#5C5C5C")
+                            troughcolor="#FFFFFF", arrowcolor="#5C5C5C",
+                            bordercolor="#D0D0D0", lightcolor="#FFFFFF",
+                            darkcolor="#FFFFFF")
+            root.option_add("*TCombobox*Listbox.background", "#FFFFFF")
+            root.option_add("*TCombobox*Listbox.foreground", "#1A1A1A")
+            spin.configure(bg="#FFFFFF", fg="#1A1A1A",
+                           insertbackground="#1A1A1A",
+                           buttonbackground="#F0F0F0",
+                           highlightbackground="#B0B0B0",
+                           highlightcolor="#B0B0B0",
+                           relief="solid", bd=1)
 
         render_pending()
 
     dark_var = tk.BooleanVar(value=False)
-    dark_check = make_check(card, "Темная тема", dark_var,
-                            lambda: set_theme(dark_var.get()))
-    dark_check.place(relx=1.0, x=-16, y=14, anchor="ne")
+    theme_row = tk.Frame(card, bg=WIN11_CARD_BG)
+    theme_row.place(relx=1.0, x=-16, y=12, anchor="ne")
+    theme_label = tk.Label(theme_row, text="Темная тема", font=FONT_BODY_SM,
+                           bg=WIN11_CARD_BG, fg=WIN11_TEXT)
+    theme_label.pack(side="left", padx=(0, 8))
+    theme_toggle = tk.Canvas(theme_row, width=42, height=22,
+                             bg=WIN11_CARD_BG, highlightthickness=0, bd=0,
+                             cursor="hand2")
+    theme_toggle.pack(side="left")
+
+    def draw_toggle():
+        theme_toggle.delete("all")
+        dark = theme_state["dark"]
+        track = "#3B7EA1" if dark else "#C9C9C9"
+        theme_toggle.create_oval(1, 1, 21, 21, fill=track, outline=track)
+        theme_toggle.create_oval(21, 1, 41, 21, fill=track, outline=track)
+        theme_toggle.create_rectangle(11, 1, 31, 21, fill=track,
+                                      outline=track)
+        x0 = 22 if dark else 2
+        theme_toggle.create_oval(x0, 2, x0 + 18, 20, fill="#FFFFFF",
+                                 outline="#FFFFFF")
+
+    def toggle_theme(event=None):
+        dark_var.set(not theme_state["dark"])
+        set_theme(dark_var.get())
+        draw_toggle()
+
+    theme_toggle.bind("<Button-1>", toggle_theme)
+    theme_label.bind("<Button-1>", toggle_theme)
+    draw_toggle()
     tk.Label(card, text=APP_VERSION, font=FONT_VERSION,
              bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="bottom", pady=(0, 6))
 
