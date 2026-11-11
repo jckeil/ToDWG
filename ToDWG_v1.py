@@ -70,7 +70,7 @@ from ezdxf.xref import ConflictPolicy
 # =============================================================================
 
 APP_NAME = "ToDWG"
-APP_VERSION = "v1.5"
+APP_VERSION = "v1.6"
 APP_FULL_TITLE = f"{APP_NAME} {APP_VERSION} — Schemagee → DXF → DWG"
 APP_INNER_TEXT = "Schemagee → DXF → DWG"
 APP_USER_MODEL_ID = "ToDWG.App.V1"
@@ -79,6 +79,7 @@ ICON_FILENAME = "Logo_toDWG.ico"
 
 # Настройки, которые переживают перезапуск (последняя папка выбора файла).
 SETTINGS_FILENAME = "ToDWG_settings.json"
+SETTINGS_DIRNAME = "ToDWG"   # папка в «Моих документах» для конфига
 
 LOG_FILENAME = "ToDWG.log"
 LOG_MAX_BYTES = 2 * 1024 * 1024
@@ -159,10 +160,54 @@ def is_network_path(path):
     return p.startswith("\\\\") or p.startswith("//")
 
 
-def load_settings():
+def documents_dir():
+    """Папка «Мои документы» текущего пользователя (без прав администратора)."""
     try:
-        with open(os.path.join(BASE_DIR, SETTINGS_FILENAME),
-                  encoding="utf-8") as f:
+        buf = ctypes.create_unicode_buffer(260)
+        # CSIDL_PERSONAL = 0x0005 — «Мои документы»
+        if ctypes.windll.shell32.SHGetFolderPathW(None, 0x0005, None, 0,
+                                                  buf) == 0:
+            path = buf.value
+            if path and os.path.isdir(path):
+                return path
+    except Exception:
+        pass
+    home = os.path.expanduser("~")
+    for name in ("Documents", "Документы",
+                 os.path.join("OneDrive", "Documents"),
+                 os.path.join("OneDrive", "Документы")):
+        candidate = os.path.join(home, name)
+        if os.path.isdir(candidate):
+            return candidate
+    return home
+
+
+def settings_dir():
+    """Папка настроек: <Мои документы>\\ToDWG (создаётся при необходимости)."""
+    folder = os.path.join(documents_dir(), SETTINGS_DIRNAME)
+    try:
+        os.makedirs(folder, exist_ok=True)
+    except Exception:
+        pass
+    return folder
+
+
+def settings_path():
+    return os.path.join(settings_dir(), SETTINGS_FILENAME)
+
+
+def load_settings():
+    """Читает конфиг из «Мои документы\\ToDWG» (с миграцией старого файла)."""
+    try:
+        path = settings_path()
+        if not os.path.isfile(path):
+            legacy = os.path.join(BASE_DIR, SETTINGS_FILENAME)
+            if os.path.isfile(legacy):
+                with open(legacy, encoding="utf-8") as f:
+                    data = json.load(f)
+                return data if isinstance(data, dict) else {}
+            return {}
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except Exception:
@@ -170,12 +215,27 @@ def load_settings():
 
 
 def save_settings(data):
-    target = os.path.join(BASE_DIR, SETTINGS_FILENAME)
+    """Пишет конфиг; папку результата и ручное число листов не сохраняет."""
+    target = settings_path()
     try:
+        clean = dict(data)
+        for key in ("out_dir", "manual_count", "manual", "count"):
+            clean.pop(key, None)
         with open(target, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(clean, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log(f"Не удалось сохранить настройки: {e}")
+
+
+def update_setting(key, value):
+    """Сохраняет одну настройку, не теряя остальные."""
+    try:
+        settings = load_settings()
+        if settings.get(key) != value:
+            settings[key] = value
+            save_settings(settings)
+    except Exception as e:
+        log(f"Не удалось сохранить настройку {key}: {e}")
 
 
 def remember_dir(path):
@@ -192,32 +252,12 @@ def remember_dir(path):
         log(f"Не удалось запомнить папку: {e}")
 
 
-def remember_out_dir(path):
-    """Запоминает выбранную папку результата (только локальную)."""
-    try:
-        folder = os.path.normpath(str(path)).strip()
-        if not folder or is_network_path(folder) or not os.path.isdir(folder):
-            return
-        settings = load_settings()
-        if settings.get("out_dir") != folder:
-            settings["out_dir"] = folder
-            save_settings(settings)
-    except Exception as e:
-        log(f"Не удалось запомнить папку результата: {e}")
-
-
 def choose_out_dir():
-    """Папка результата по умолчанию.
+    """Папка результата по умолчанию — рядом с программой.
 
-    Если раньше пользователь выбрал локальную папку — берём её, иначе
-    результаты пишутся рядом с программой (прежнее поведение).
+    В v1.6 папка результата в конфиг не пишется: каждый запуск начинается
+    с папки рядом с exe, но пользователь может выбрать другую на сеанс.
     """
-    try:
-        last = str(load_settings().get("out_dir") or "").strip()
-    except Exception:
-        last = ""
-    if last and not is_network_path(last) and os.path.isdir(last):
-        return last
     return BASE_DIR
 
 
@@ -3210,7 +3250,8 @@ def report_kind_for(results):
 
 
 def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
-                 paper_w=PAPER_W, paper_h=PAPER_H, out_dir=None):
+                 paper_w=PAPER_W, paper_h=PAPER_H, out_dir=None,
+                 save_log=True):
     """Полный цикл: открыть .sdd, сохранить листы, собрать DWG, отдать отчёт."""
     check_stop()
     _OWNED_SCHEMAGEE["opened"] = False
@@ -3313,7 +3354,8 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     check_stop()
 
     run_dir = make_run_folder(name, out_dir)
-    attach_run_log(os.path.join(run_dir, LOG_FILENAME))
+    if save_log:
+        attach_run_log(os.path.join(run_dir, LOG_FILENAME))
     log(f"Папка результата: {run_dir}")
 
     t_conv = time.time()
@@ -3332,9 +3374,11 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
         log(f"Не удалось закрыть Schemagee: {e}")
 
     if not produced:
+        details = (os.path.join(run_dir, LOG_FILENAME) if save_log
+                   else os.path.join(BASE_DIR, LOG_FILENAME))
         raise RuntimeError(
             f"Ни один лист не сохранён (0 из {sheet_count}).\n\n"
-            f"Подробности: {os.path.join(run_dir, LOG_FILENAME)}"
+            f"Подробности: {details}"
         )
     check_stop()
 
@@ -3344,6 +3388,15 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
                       delete_sources=delete_dxf,
                       paper_w=paper_w, paper_h=paper_h)
     merge_time = time.time() - t_merge
+
+    if not save_log:
+        # Пользователю служебные файлы рядом с DWG не нужны.
+        _service = os.path.join(run_dir, "placed.json")
+        try:
+            if os.path.isfile(_service):
+                os.remove(_service)
+        except Exception as e:
+            log(f"Не удалось удалить {_service}: {e}")
 
     target = merge["file"]
     placed = len(merge["placed"])
@@ -3384,7 +3437,8 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
         "notes": notes,
         "version": APP_VERSION,
     }
-    write_result_json(run_dir, stats)
+    if save_log:
+        write_result_json(run_dir, stats)
     emit("success", stats)
     return stats
 
@@ -3513,12 +3567,15 @@ def run_gui():
     manual_var = tk.BooleanVar(value=False)
     count_var = tk.StringVar(value="1")
     hint_var = tk.StringVar(value="")
-    delete_var = tk.BooleanVar(value=True)   # удалять DXF после конвертации
-    report_var = tk.BooleanVar(value=True)   # показывать отчёт по завершении
+    ui_settings = load_settings()
+    save_log_var = tk.BooleanVar(value=bool(ui_settings.get("save_log", False)))
+    delete_var = tk.BooleanVar(value=bool(ui_settings.get("delete_dxf", True)))
+    report_var = tk.BooleanVar(value=bool(ui_settings.get("show_report", True)))
+    dark_default = str(ui_settings.get("theme", "dark")) != "light"
     format_var = tk.BooleanVar(value=False)  # выбрать формат листа вручную
     format_value = tk.StringVar(value="A3")  # формат при ручном выборе
     orient_value = tk.StringVar(value="горизонтальный")
-    out_state = {"dir": choose_out_dir()}    # папка результата
+    out_state = {"dir": choose_out_dir()}    # папка результата (не сохраняется)
     outdir_var = tk.StringVar()
 
     def on_toggle():
@@ -3630,7 +3687,7 @@ def run_gui():
     pending = []
     # Последний запущенный список файлов: возвращается в окно при отмене.
     _LAST_PATHS = {"paths": []}
-    theme_state = {"dark": True}
+    theme_state = {"dark": dark_default}
 
     LIGHT_TO_DARK = {
         "#F3F3F3": "#2B2B2B",   # фон окна
@@ -3795,8 +3852,7 @@ def run_gui():
             return
         out_state["dir"] = folder
         refresh_outdir_label()
-        remember_out_dir(folder)
-        log(f"Папка результата: {folder}")
+        log(f"Папка результата: {folder} (до конца сеанса)")
 
     outdir_row = tk.Frame(card, bg=WIN11_CARD_BG)
     outdir_row.pack(padx=115, pady=(12, 0), fill="x")
@@ -3849,11 +3905,6 @@ def run_gui():
                       disabledbackground="#F0F0F0",
                       disabledforeground="#A0A0A0")
     spin.pack(side="left", padx=(12, 0))
-
-    make_check(opts, "Удалять .dxf файлы после конвертации",
-               delete_var).pack(anchor="w", pady=(2, 0))
-    make_check(opts, "Выводить отчёт по завершении",
-               report_var).pack(anchor="w", pady=(2, 0))
 
     format_row = tk.Frame(opts, bg=WIN11_CARD_BG)
     format_row.pack(anchor="w", pady=(2, 0))
@@ -4042,7 +4093,7 @@ def run_gui():
 
         render_pending()
 
-    dark_var = tk.BooleanVar(value=True)
+    dark_var = tk.BooleanVar(value=dark_default)
     theme_row = tk.Frame(card, bg=WIN11_CARD_BG)
     theme_row.place(relx=1.0, x=-16, y=12, anchor="ne")
     theme_label = tk.Label(theme_row, text="Темная тема", font=FONT_BODY_SM,
@@ -4069,10 +4120,61 @@ def run_gui():
         dark_var.set(not theme_state["dark"])
         set_theme(dark_var.get())
         draw_toggle()
+        update_setting("theme", "dark" if theme_state["dark"] else "light")
 
     theme_toggle.bind("<Button-1>", toggle_theme)
     theme_label.bind("<Button-1>", toggle_theme)
     draw_toggle()
+
+    def open_settings():
+        """Окно параметров: журнал, удаление DXF, отчёт по завершении."""
+        win = tk.Toplevel(root)
+        win.title("Параметры")
+        win.resizable(False, False)
+        win.configure(bg=WIN11_BG)
+        apply_icon(win)
+        win.transient(root)
+        _center(win, 560, 400)
+        card_s = _card(win, 500, 340)
+
+        tk.Label(card_s, text="Параметры",
+                 font=("Segoe UI Variable Display", 15, "bold"),
+                 bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(20, 8))
+        tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
+            fill="x", padx=26, pady=(0, 12))
+
+        def save_log_cmd():
+            update_setting("save_log", save_log_var.get())
+
+        def delete_cmd():
+            update_setting("delete_dxf", delete_var.get())
+
+        def report_cmd():
+            update_setting("show_report", report_var.get())
+
+        make_check(card_s, "Сохранять журнал конвертирования",
+                   save_log_var, save_log_cmd).pack(
+            anchor="w", padx=40, pady=(2, 0))
+        make_check(card_s, "Удалять .dxf файлы после конвертации",
+                   delete_var, delete_cmd).pack(
+            anchor="w", padx=40, pady=(6, 0))
+        make_check(card_s, "Выводить отчёт по завершении",
+                   report_var, report_cmd).pack(
+            anchor="w", padx=40, pady=(6, 0))
+
+        btns = tk.Frame(card_s, bg=WIN11_CARD_BG)
+        btns.pack(side="bottom", pady=(14, 24))
+        _button(btns, "Закрыть", win.destroy).pack()
+
+        apply_theme_tree(win, theme_state["dark"])
+        win.focus_force()
+
+    tk.Button(card, text="Параметры", command=open_settings,
+              font=FONT_BODY_SM, bg="#E5E5E5", fg=WIN11_TEXT,
+              activebackground="#D6D6D6", activeforeground=WIN11_TEXT,
+              relief="flat", bd=0, highlightthickness=0, cursor="hand2",
+              padx=12, pady=4).place(relx=0.0, x=16, y=12, anchor="nw")
+
     tk.Label(card, text=APP_VERSION, font=FONT_VERSION,
              bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="bottom", pady=(0, 6))
 
@@ -4427,7 +4529,8 @@ def run_gui():
         log("Schemagee закрыт, продолжаем.")
         return True
 
-    def worker(paths, manual_count, delete_dxf, paper_w, paper_h, out_dir):
+    def worker(paths, manual_count, delete_dxf, paper_w, paper_h, out_dir,
+               save_log):
         _PIPELINE_STATE["running"] = True
         results = []
         try:
@@ -4451,7 +4554,7 @@ def run_gui():
                     stats = run_pipeline(path, manual_count, inner,
                                          delete_dxf=delete_dxf,
                                          paper_w=paper_w, paper_h=paper_h,
-                                         out_dir=out_dir)
+                                         out_dir=out_dir, save_log=save_log)
                     results.append(stats)
                 except TaskStopped:
                     raise
@@ -4499,15 +4602,16 @@ def run_gui():
         paper_w, paper_h = paper_dimensions()
         threading.Thread(target=worker,
                          args=(paths, manual_count, delete_var.get(),
-                               paper_w, paper_h, out_state["dir"]),
+                               paper_w, paper_h, out_state["dir"],
+                               save_log_var.get()),
                          daemon=True).start()
 
     start_stop_hotkey()
 
     root.protocol("WM_DELETE_WINDOW", lambda: close_app(0))
 
-    # Тёмная тема по умолчанию: окно уже собрано — перекрашиваем его целиком.
-    set_theme(True)
+    # Тема из конфига (по умолчанию тёмная): окно собрано — красим целиком.
+    set_theme(dark_default)
     root.after(100, poll)
     root.mainloop()
 
