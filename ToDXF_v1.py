@@ -3688,12 +3688,11 @@ def run_gui():
                      wraplength=640, justify="left").pack(anchor="w", padx=36)
 
         btns = tk.Frame(card_s, bg=WIN11_CARD_BG)
-        btns.pack(side="bottom", pady=(16, 0))
+        btns.pack(side="bottom", pady=(16, 26))
         _button(btns, "Открыть папку",
                 lambda: _open_folder(stats["out_dir"])).pack(side="left",
                                                              padx=(0, 10))
-        _button(btns, "Закрыть", lambda: close_app(0),
-                primary=False).pack(side="left")
+        _button(btns, "Закрыть", lambda: close_app(0)).pack(side="left")
 
         apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
@@ -3739,7 +3738,7 @@ def run_gui():
         text.config(state="disabled")
 
         _button(card_b, "Закрыть", lambda: close_app(0)).pack(side="bottom",
-                                                             pady=(14, 0))
+                                                             pady=(14, 22))
         apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
         win.focus_force()
@@ -3764,7 +3763,7 @@ def run_gui():
                  fg=WIN11_TEXT, wraplength=560, justify="left").pack(
             anchor="w", padx=36)
         _button(card_e, "OK", lambda: close_app(1)).pack(side="bottom",
-                                                         pady=(16, 0))
+                                                        pady=(16, 24))
 
         apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
@@ -3793,7 +3792,7 @@ def run_gui():
                  font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
                  wraplength=500, justify="left").pack(anchor="w", padx=36)
         _button(card_t, "OK", lambda: close_app(2)).pack(side="bottom",
-                                                         pady=(16, 0))
+                                                        pady=(16, 22))
 
         apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
