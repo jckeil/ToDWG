@@ -717,6 +717,138 @@ def force_foreground(hwnd, timeout=3.0):
     return _is_foreground(hwnd)
 
 
+class _GUITHREADINFO(ctypes.Structure):
+    """Win32 GUITHREADINFO: кто реально получит нажатия клавиш."""
+    _fields_ = [
+        ("cbSize", ctypes.wintypes.DWORD),
+        ("flags", ctypes.wintypes.DWORD),
+        ("hwndActive", ctypes.wintypes.HWND),
+        ("hwndFocus", ctypes.wintypes.HWND),
+        ("hwndCapture", ctypes.wintypes.HWND),
+        ("hwndMenuOwner", ctypes.wintypes.HWND),
+        ("hwndMoveSize", ctypes.wintypes.HWND),
+        ("hwndCaret", ctypes.wintypes.HWND),
+        ("rcCaret", ctypes.wintypes.RECT),
+    ]
+
+
+def foreground_focus():
+    """(hwndActive, hwndFocus) активного потока — куда уйдут клавиши.
+
+    GetForegroundWindow()==Schemagee ещё не значит, что нажатия попадут в
+    Schemagee: клавиатурный фокус мог остаться у другого окна (заставка,
+    наше окно прогресса, панель задач). Именно так команды «уходят в никуда».
+    """
+    try:
+        info = _GUITHREADINFO()
+        info.cbSize = ctypes.sizeof(_GUITHREADINFO)
+        if not ctypes.windll.user32.GetGUIThreadInfo(0, ctypes.byref(info)):
+            return 0, 0
+        return info.hwndActive or 0, info.hwndFocus or 0
+    except Exception:
+        return 0, 0
+
+
+def focus_owner_pid():
+    """PID процесса, который получит нажатия клавиш (0 — неизвестно)."""
+    active, focus = foreground_focus()
+    target = focus or active
+    if target:
+        return window_pid(target)
+    try:
+        return window_pid(win32gui.GetForegroundWindow())
+    except Exception:
+        return 0
+
+
+def focus_description(hwnd):
+    """Текст для лога: куда сейчас уйдут нажатия клавиш."""
+    active, focus = foreground_focus()
+    target = focus or active
+    if not target:
+        try:
+            target = win32gui.GetForegroundWindow()
+        except Exception:
+            target = 0
+    try:
+        title = win32gui.GetWindowText(target) if target else ""
+        cls = win32gui.GetClassName(target) if target else ""
+    except Exception:
+        title, cls = "", ""
+    pid = window_pid(target) if target else 0
+    schem_pid = window_pid(hwnd)
+    where = "в Schemagee" if pid and pid == schem_pid else "НЕ в Schemagee"
+    return f"{title!r} класс={cls} hwnd={target} pid={pid} — {where}"
+
+
+def click_window_caption(hwnd):
+    """Кликает по заголовку окна: активирует его, не трогая документ."""
+    try:
+        rect = win32gui.GetWindowRect(hwnd)
+        style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)
+    except Exception:
+        return False
+    left, top, right, bottom = rect
+    if right - left < 80 or bottom - top < 60:
+        return False
+    if not (style & win32con.WS_CAPTION):
+        return False
+    x = (left + right) // 2
+    y = top + 8
+    user32 = ctypes.windll.user32
+    try:
+        user32.SetCursorPos(int(x), int(y))
+        time.sleep(0.05)
+        user32.mouse_event(0x0002, 0, 0, 0, 0)   # LEFTDOWN
+        time.sleep(0.05)
+        user32.mouse_event(0x0004, 0, 0, 0, 0)   # LEFTUP
+    except Exception:
+        return False
+    return True
+
+
+def give_keyboard_focus(hwnd, timeout=2.5):
+    """Отдаёт окну Schemagee клавиатурный фокус и ПРОВЕРЯЕТ результат.
+
+    Порядок: SetForegroundWindow + SetFocus из потока-владельца (через
+    AttachThreadInput), затем — клик по заголовку окна. Без подтверждённого
+    фокуса Ctrl+P/Shift+D уходят в чужое окно, и лист молча пропускается.
+    """
+    pid = window_pid(hwnd)
+    if not pid:
+        return False
+    me = ctypes.windll.kernel32.GetCurrentThreadId()
+    end = time.time() + timeout
+    clicked = False
+    while time.time() < end:
+        if focus_owner_pid() == pid:
+            return True
+        attached = False
+        try:
+            t_target = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
+            if t_target and t_target != me:
+                attached = bool(ctypes.windll.user32.AttachThreadInput(
+                    me, t_target, True))
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            ctypes.windll.user32.SetFocus(hwnd)
+        except Exception:
+            pass
+        finally:
+            if attached:
+                try:
+                    ctypes.windll.user32.AttachThreadInput(me, t_target, False)
+                except Exception:
+                    pass
+        if focus_owner_pid() == pid:
+            return True
+        # Клик по заголовку — один раз за вызов: иначе серия кликов
+        # воспринимается как двойной и окно развернётся/свернётся.
+        if not clicked:
+            clicked = click_window_caption(hwnd)
+        time.sleep(0.2)
+    return focus_owner_pid() == pid
+
+
 # Связь кликера с интерфейсом: окно прогресса можно спрятать, если оно
 # мешает отдать фокус Schemagee. Заполняется в run_gui().
 _UI_SIGNAL = {"emit": None}
@@ -781,6 +913,10 @@ def ensure_schemagee_active(hwnd, what="Schemagee"):
     Модальные окна Schemagee («Экспорт», «Сохранение», вопросы) получают фокус
     сами. Если в этот момент активировать главное окно, Enter/Tab уходят в
     него, а модальное окно остаётся висеть и блокирует следующие листы.
+
+    Дополнительно проверяется КЛАВИАТУРНЫЙ фокус: окно может быть активным,
+    а нажатия при этом уходят в другое окно (заставка Schemagee, наше окно
+    прогресса, панель задач). Тогда команды «теряются» и лист пропускается.
     """
     try:
         fg = win32gui.GetForegroundWindow()
@@ -789,8 +925,64 @@ def ensure_schemagee_active(hwnd, what="Schemagee"):
     if fg and fg != hwnd:
         fg_pid = window_pid(fg)
         if fg_pid and fg_pid == window_pid(hwnd):
-            return True       # активно другое окно Schemagee — не мешаем
-    return ensure_foreground(hwnd, what=what)
+            # Активно другое окно Schemagee — не мешаем, но клавиши должны
+            # попадать именно в него.
+            if focus_owner_pid() == fg_pid:
+                return True
+            if give_keyboard_focus(fg, timeout=1.5):
+                return True
+            log(f"  ВНИМАНИЕ: фокус клавиатуры не в окне Schemagee — "
+                f"{focus_description(hwnd)}")
+            return True
+    ok = ensure_foreground(hwnd, what=what)
+    if ok and not give_keyboard_focus(hwnd, timeout=2.0):
+        log(f"  ВНИМАНИЕ: окно {what} активно, но клавиатурный фокус "
+            f"в другом окне — {focus_description(hwnd)}")
+    return ok
+
+
+def send_hotkey_until(hwnd, keys, finder, what="диалог", attempts=3,
+                      timeouts=(8.0, 6.0, 6.0)):
+    """Шлёт сочетание и ждёт результат, повторяя при промахе.
+
+    Schemagee иногда «проглатывает» первую команду сразу после открытия
+    документа: окно уже видимо и активно, но приложение ещё инициализируется.
+    Раньше одна потерянная команда приводила к молчаливому пропуску листа —
+    теперь сочетание повторяется с восстановлением фокуса.
+    """
+    for attempt in range(1, attempts + 1):
+        check_stop()
+        ensure_schemagee_active(hwnd, what="Schemagee")
+        log(f"  Отправляем {keys} (попытка {attempt}/{attempts}); "
+            f"фокус: {focus_description(hwnd)}")
+        keyboard.send(keys)
+        found = finder(timeout=timeouts[min(attempt - 1, len(timeouts) - 1)])
+        if found:
+            return found
+        log(f"  {what} не появился после {keys}.")
+        if attempt < attempts:
+            pause(0.7)
+    return None
+
+
+def log_schemagee_windows(main_hwnd, note=""):
+    """Пишет в лог все окна процесса Schemagee: видно заставки и попапы."""
+    pid = window_pid(main_hwnd)
+    if not pid:
+        return
+    try:
+        rows = process_windows(pid)
+    except Exception as e:
+        log(f"  Не удалось перечислить окна Schemagee: {e}")
+        return
+    parts = []
+    for h, title in rows:
+        try:
+            cls = win32gui.GetClassName(h)
+        except Exception:
+            cls = "?"
+        parts.append(f"{title!r}({cls})")
+    log(f"  Окна Schemagee {note}: " + "; ".join(parts))
 
 
 def schemagee_windows():
@@ -835,6 +1027,42 @@ def wait_schemagee_window(timeout=15.0):
             next_note = time.time() + 5.0
         short_sleep(0.1)
     return None, None
+
+
+def send_message_safe(hwnd, msg, wparam=0, lparam=0, timeout_ms=2000):
+    """SendMessage с ограничением ожидания — не «замирает» вместе с окном.
+
+    Обычный win32gui.SendMessage в окно другого процесса ждёт, пока то
+    приложение обработает сообщение. Если Schemagee в этот момент занят
+    (загружает документ, показывает модальное окно), наш поток ждёт
+    бесконечно — снаружи это выглядит как «программа открыла Schemagee и
+    встала». Отправляем в отдельном потоке и ждём не дольше timeout_ms;
+    WM_SETTEXT через PostMessage отправить нельзя (Windows отвечает 1159).
+    """
+    box = {"value": 0}
+
+    def run():
+        try:
+            box["value"] = win32gui.SendMessage(hwnd, msg, wparam, lparam)
+        except Exception:
+            pass
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(max(0.1, timeout_ms / 1000.0))
+    return box["value"]
+
+
+def post_click(button_hwnd, note="кнопка"):
+    """Нажимает кнопку асинхронно (PostMessage) — без риска зависнуть."""
+    if not button_hwnd:
+        return False
+    try:
+        win32gui.PostMessage(button_hwnd, win32con.BM_CLICK, 0, 0)
+        return True
+    except Exception as e:
+        log(f"  Не удалось нажать {note}: {e}")
+        return False
 
 
 def _find_dialog(title, timeout=5.0):
@@ -1008,10 +1236,7 @@ def confirm_dialog(dialog_hwnd, note="диалог", timeout=2.0):
         if button:
             break
     if button:
-        try:
-            win32gui.SendMessage(button, win32con.BM_CLICK, 0, 0)
-        except Exception:
-            pass
+        post_click(button, note="подтверждение диалога")
         if wait_dialog_close(dialog_hwnd, timeout=timeout):
             return True
 
@@ -1146,9 +1371,9 @@ def press_export_button(main_hwnd, look=1.5, note="Экспорт"):
                 text = win32gui.GetWindowText(button)
                 log(f"    нажимаем кнопку {text!r} "
                     f"(id={win32gui.GetDlgCtrlID(button)})")
-                win32gui.SendMessage(button, win32con.BM_CLICK, 0, 0)
+                post_click(button, note="«Экспорт»")
             except Exception as e:
-                log(f"    BM_CLICK не сработал: {e}")
+                log(f"    нажатие «Экспорт» не сработало: {e}")
             if wait_dialog_close(form, timeout=4.0):
                 return True
 
@@ -1207,15 +1432,48 @@ def set_save_path(dialog_hwnd, path):
         # текст нужно задать обоим, иначе диалог возьмёт прежнее имя.
         parent = win32gui.GetParent(edit_hwnd)
         if parent and win32gui.GetClassName(parent) == "ComboBox":
-            win32gui.SendMessage(parent, win32con.WM_SETTEXT, 0, path)
-        win32gui.SendMessage(edit_hwnd, win32con.EM_SETSEL, 0, -1)
-        win32gui.SendMessage(edit_hwnd, win32con.WM_SETTEXT, 0, path)
+            send_message_safe(parent, win32con.WM_SETTEXT, 0, path)
+        win32gui.PostMessage(edit_hwnd, win32con.EM_SETSEL, 0, -1)
+        # WM_SETTEXT нельзя отправить через PostMessage (Windows отвечает
+        # ошибкой 1159), поэтому — SendMessage с таймаутом: диалог активен,
+        # а при занятости окна поток не «замирает».
+        send_message_safe(edit_hwnd, win32con.WM_SETTEXT, 0, path)
+        for _ in range(10):
+            if _control_text(edit_hwnd).strip() == path.strip():
+                break
+            time.sleep(0.1)
+            send_message_safe(edit_hwnd, win32con.WM_SETTEXT, 0, path)
+        if _control_text(edit_hwnd).strip() != path.strip():
+            log("  ВНИМАНИЕ: поле пути не приняло текст — вводим с клавиатуры.")
+            return _type_save_path(edit_hwnd, path)
         log(f"  Путь установлен: {path} "
             f"(поле id={win32gui.GetDlgCtrlID(edit_hwnd)})")
         return True
     except Exception as e:
         log(f"  Не удалось установить путь: {e}")
         return False
+
+
+def _type_save_path(edit_hwnd, path):
+    """Резерв: вводит путь с клавиатуры через буфер обмена."""
+    try:
+        pyperclip.copy(path)
+    except Exception as e:
+        log(f"  Буфер обмена недоступен: {e}")
+        return False
+    if not force_foreground(edit_hwnd, timeout=1.5):
+        log("  Не удалось активировать поле пути.")
+        return False
+    keyboard.send('ctrl+a')
+    pause(0.2)
+    keyboard.send('ctrl+v')
+    pause(0.4)
+    current = _control_text(edit_hwnd).strip()
+    if current == path.strip():
+        log(f"  Путь введён с клавиатуры: {path}")
+        return True
+    log(f"  Не удалось ввести путь (в поле: {current[:60]!r}).")
+    return False
 
 
 def click_save_button(dialog_hwnd):
@@ -1233,7 +1491,7 @@ def click_save_button(dialog_hwnd):
 
     win32gui.EnumChildWindows(dialog_hwnd, cb, None)
     if result:
-        win32gui.SendMessage(result[0], win32con.BM_CLICK, 0, 0)
+        post_click(result[0], note="«Сохранить»")
         return True
     return False
 
@@ -1335,9 +1593,9 @@ def _control_text(hwnd):
     а WM_GETTEXT через SendMessage отдаёт настоящий текст поля.
     """
     try:
-        length = win32gui.SendMessage(hwnd, win32con.WM_GETTEXTLENGTH, 0, 0)
+        length = send_message_safe(hwnd, win32con.WM_GETTEXTLENGTH, 0, 0)
         buf = ctypes.create_unicode_buffer(length + 1)
-        win32gui.SendMessage(hwnd, win32con.WM_GETTEXT, length + 1, buf)
+        send_message_safe(hwnd, win32con.WM_GETTEXT, length + 1, buf)
         return buf.value
     except Exception:
         return ""
@@ -1391,11 +1649,8 @@ def read_pages_count(dialog_hwnd):
     states = {}
     for hwnd, cls, cid, text, rect in items:
         if cls == "Button" and cid in (PRINT_RADIO_ALL, PRINT_RADIO_RANGE):
-            try:
-                states[cid] = win32gui.SendMessage(hwnd, win32con.BM_GETCHECK,
-                                                   0, 0)
-            except Exception:
-                states[cid] = "?"
+            states[cid] = send_message_safe(hwnd, win32con.BM_GETCHECK, 0, 0,
+                                            timeout_ms=800) or "?"
 
     to_edit = None
     from_text = ""
@@ -1425,10 +1680,8 @@ def switch_pages_to_range(dialog_hwnd):
         if cls != "Button":
             continue
         if cid == PRINT_RADIO_RANGE or text.strip().lower() in ("с:", "с :"):
-            try:
-                win32gui.SendMessage(hwnd, win32con.BM_CLICK, 0, 0)
-            except Exception as e:
-                log(f"  [печать] Не удалось включить диапазон: {e}")
+            if not post_click(hwnd, note="«С:»"):
+                log("  [печать] Не удалось включить диапазон.")
                 return False
             pause(0.4)
             log("  [печать] Включён диапазон страниц «С:».")
@@ -1455,11 +1708,13 @@ def read_sheet_count_from_print_dialog():
     log(f"  [печать] Активное окно: {foreground_title()}")
     pause(0.3)
 
-    keyboard.send('ctrl+p')
-
-    dialog_hwnd = find_print_dialog(timeout=8.0)
+    # Ctrl+P мог «потеряться», пока Schemagee открывал документ: пробуем
+    # несколько раз, каждый раз возвращая фокус клавиатуры.
+    dialog_hwnd = send_hotkey_until(
+        hwnd, 'ctrl+p', find_print_dialog, what="Диалог «Печать»",
+        attempts=3, timeouts=(8.0, 5.0, 4.0))
     if not dialog_hwnd:
-        log("  [печать] Диалог «Печать» не открылся.")
+        log("  [печать] Диалог «Печать» не открылся после 3 попыток.")
         return None
 
     log(f"  [печать] Диалог найден (hwnd={dialog_hwnd}).")
@@ -1469,6 +1724,11 @@ def read_sheet_count_from_print_dialog():
 
     count = read_pages_count(dialog_hwnd)
     if count is None and switch_pages_to_range(dialog_hwnd):
+        pause(0.5)
+        count = read_pages_count(dialog_hwnd)
+    if count is None:
+        # Поля диалога могли заполниться не сразу после открытия.
+        pause(0.8)
         count = read_pages_count(dialog_hwnd)
 
     if count is not None:
@@ -1703,7 +1963,11 @@ def reopen_schemagee(path, sheet_num):
         return 0
     wait_window_ready(hwnd, timeout=10.0)
     wait_schemagee_ready(hwnd, timeout=60.0)
+    log_schemagee_windows(hwnd, "после перезапуска")
     ensure_foreground(hwnd, what="Schemagee")
+    if not give_keyboard_focus(hwnd, timeout=2.5):
+        log(f"  ВНИМАНИЕ: клавиатурный фокус не в Schemagee — "
+            f"{focus_description(hwnd)}")
     switch_to_english(hwnd)
     pause(SHEET_OPEN_PAUSE)
     for _ in range(max(0, sheet_num - 1)):
@@ -1769,6 +2033,90 @@ def log_recent_files(folder, since, limit=6):
         log(f"    не удалось посмотреть папку результата: {e}")
 
 
+# Кнопка «...» в форме «Экспорт в DXF»: только она открывает диалог
+# сохранения. Раньше вместо неё жали Enter «вслепую».
+EXPORT_BROWSE_TEXTS = ("...", "…", "Обзор", "&Обзор", "Browse", "&Browse")
+SAVE_OPEN_ATTEMPTS = 2        # попыток открыть диалог «Сохранение»
+EXPORT_FORM_TIMEOUT = 6.0     # ожидание формы «Экспорт в DXF» после Shift+D
+
+
+def press_export_browse(form_hwnd):
+    """Нажимает «...» в форме «Экспорт в DXF» — открывает выбор файла."""
+    if not form_hwnd:
+        return False
+    button = _find_button(form_hwnd, EXPORT_BROWSE_TEXTS)
+    if not button:
+        log("  Не нашли кнопку «...» в форме экспорта — состав окна:")
+        dump_dialog_controls(form_hwnd, "Экспорт в DXF")
+        return False
+    if not post_click(button, note="«...»"):
+        return False
+    log("  Нажали «...» — ждём диалог «Сохранение».")
+    return True
+
+
+def wait_save_or_export(main_hwnd, timeout=EXPORT_FORM_TIMEOUT):
+    """Ждёт диалог «Сохранение» или форму «Экспорт в DXF».
+
+    Возвращает ("save", hwnd) / ("form", hwnd) / (None, None).
+    """
+    end = time.time() + timeout
+    while time.time() < end:
+        check_stop()
+        dialog = find_save_dialog(timeout=0.05)
+        if dialog:
+            return "save", dialog
+        form, _title = _export_form(main_hwnd, look=0.05)
+        if form:
+            return "form", form
+        short_sleep(0.05)
+    return None, None
+
+
+def start_save_dialog(main_hwnd):
+    """Открывает диалог «Сохранение» и возвращает его hwnd (0 — не вышло).
+
+    Shift+D в Schemagee открывает не диалог сохранения, а форму «Экспорт
+    в DXF» (поле «Файл:» и кнопка «...»). Диалог появляется только после
+    нажатия «...». Прежний код жал Enter «вслепую»: это срабатывало, лишь
+    когда фокус случайно оказывался на «...», поэтому лист иногда молча
+    пропускался.
+    """
+    check_stop()
+    if not main_hwnd:
+        keyboard.send('shift+d')
+        return find_save_dialog(timeout=SAVE_DIALOG_TIMEOUT) or 0
+
+    for attempt in range(1, SAVE_OPEN_ATTEMPTS + 1):
+        check_stop()
+        ensure_schemagee_active(main_hwnd, what="Schemagee")
+        log(f"  Shift+D: открываем экспорт (попытка {attempt}/"
+            f"{SAVE_OPEN_ATTEMPTS}); фокус: {focus_description(main_hwnd)}")
+        keyboard.send('shift+d')
+        kind, target = wait_save_or_export(main_hwnd, timeout=EXPORT_FORM_TIMEOUT)
+
+        if kind == "save":
+            log(f"  Диалог «Сохранение» открыт (hwnd={target}).")
+            return target
+
+        if kind != "form":
+            log("  После Shift+D не появилось ни формы экспорта, ни диалога.")
+            continue
+
+        log(f"  Форма «Экспорт в DXF» открыта (hwnd={target}) — "
+            "выбираем путь через «...».")
+        if not press_export_browse(target):
+            return 0
+        dialog = find_save_dialog(timeout=SAVE_DIALOG_TIMEOUT)
+        if dialog:
+            log(f"  Диалог «Сохранение» открыт (hwnd={dialog}).")
+            return dialog
+        log("  Диалог «Сохранение» не открылся после нажатия «...».")
+        return 0
+
+    return 0
+
+
 def _save_current_sheet(out_path, main_hwnd=None):
     """Одна попытка сохранить текущий лист в DXF. True — файл на диске."""
     attempt_start = time.time()
@@ -1779,13 +2127,9 @@ def _save_current_sheet(out_path, main_hwnd=None):
             log(f"  Не удалось удалить прежний файл {out_path}: {e}")
 
     pause(KEY_SETTLE)
-    keyboard.send('shift+d')
-    # Диалог открывается сам; Enter отправляем только если его нет, иначе
-    # можно закрыть уже открытый диалог раньше, чем впишем путь.
-    dialog_hwnd = find_save_dialog(timeout=3.0)
-    if not dialog_hwnd:
-        keyboard.send('enter')
-        dialog_hwnd = find_save_dialog(timeout=SAVE_DIALOG_TIMEOUT - 3.0)
+    # Shift+D открывает форму «Экспорт в DXF»; путь задаётся через «...»
+    # в этой форме (см. start_save_dialog).
+    dialog_hwnd = start_save_dialog(main_hwnd)
     if not dialog_hwnd:
         log("  ВНИМАНИЕ: окно «Сохранение» не появилось.")
         return False
@@ -2843,8 +3187,12 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     else:
         log("ВНИМАНИЕ: Schemagee не подтвердил готовность за 60 с — "
             "продолжаем, но первая команда может потеряться.")
+    log_schemagee_windows(hwnd, "после открытия")
     ensure_foreground(hwnd, what="Schemagee")
-    log(f"Активное окно: {foreground_title()}")
+    if not give_keyboard_focus(hwnd, timeout=2.5):
+        log(f"ВНИМАНИЕ: клавиатурный фокус не в Schemagee — "
+            f"{focus_description(hwnd)}")
+    log(f"Активное окно: {focus_description(hwnd)}")
     switch_to_english(hwnd)
     pause(SHEET_OPEN_PAUSE)   # даём программе дорисовать лист
 
