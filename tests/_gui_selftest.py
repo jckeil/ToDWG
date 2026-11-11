@@ -104,6 +104,8 @@ def mainloop_stub(self, n=0):
         self.update()
         report.append(("theme_dark", self.cget("bg"), card.cget("bg"),
                        spin.cget("bg") if spin is not None else "-",
+                       spin.cget("disabledbackground")
+                       if spin is not None else "-",
                        style.lookup("TCombobox", "fieldbackground")))
         dark.event_generate("<Button-1>", x=5, y=5)
         self.update()

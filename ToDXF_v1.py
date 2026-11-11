@@ -3325,7 +3325,9 @@ def run_gui():
                       state="disabled", justify="center", relief="flat",
                       bd=0, highlightthickness=1,
                       highlightbackground=WIN11_BORDER,
-                      highlightcolor=WIN11_BORDER)
+                      highlightcolor=WIN11_BORDER,
+                      disabledbackground="#F0F0F0",
+                      disabledforeground="#A0A0A0")
     spin.pack(side="left", padx=(12, 0))
 
     make_check(opts, "Удалять .dxf файлы после конвертации",
@@ -3459,6 +3461,9 @@ def run_gui():
             spin.configure(bg="#3A3A3A", fg="#E6E6E6",
                            insertbackground="#E6E6E6",
                            buttonbackground="#3A3A3A",
+                           disabledbackground="#3A3A3A",
+                           disabledforeground="#7F7F7F",
+                           readonlybackground="#3A3A3A",
                            highlightbackground="#4A4A4A",
                            highlightcolor="#4A4A4A",
                            relief="flat", bd=0, highlightthickness=1)
@@ -3487,6 +3492,9 @@ def run_gui():
             spin.configure(bg="#FFFFFF", fg="#1A1A1A",
                            insertbackground="#1A1A1A",
                            buttonbackground="#F0F0F0",
+                           disabledbackground="#F0F0F0",
+                           disabledforeground="#A0A0A0",
+                           readonlybackground="#FFFFFF",
                            highlightbackground="#B0B0B0",
                            highlightcolor="#B0B0B0",
                            relief="flat", bd=0, highlightthickness=1)
