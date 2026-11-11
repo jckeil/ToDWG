@@ -45,7 +45,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ToDXF_v1',
+    name='ToDXF',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

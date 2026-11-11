@@ -3391,30 +3391,50 @@ def run_gui():
 
     hint_var.trace_add("write", sync_hint)
 
-    def set_theme(dark):
-        """Мягкая тёмная/светлая тема: перекрашивает всё окно по палитре."""
-        theme_state["dark"] = dark
+    def apply_theme_tree(widget, dark):
+        """Перекрашивает поддерево виджетов под светлую/тёмную палитру."""
         mapping = LIGHT_TO_DARK if dark else DARK_TO_LIGHT
 
-        def walk(widget):
+        def walk(w):
             for option in ("bg", "fg", "activebackground",
                            "activeforeground", "selectcolor",
                            "highlightbackground", "highlightcolor"):
                 try:
-                    current = str(widget.cget(option))
+                    current = str(w.cget(option))
                 except Exception:
                     continue
                 new = mapping.get(current)
                 if not new:
                     continue
                 try:
-                    widget.configure(**{option: new})
+                    w.configure(**{option: new})
                 except Exception:
                     pass
-            for child in widget.winfo_children():
+            for child in w.winfo_children():
                 walk(child)
 
-        walk(root)
+        walk(widget)
+
+        colors = palette()
+
+        def fix_buttons(w):
+            for child in w.winfo_children():
+                if isinstance(child, tk.Button):
+                    bg = str(child.cget("bg"))
+                    if bg in ("#0067C0", "#1A7DD8", "#3B7EA1", "#4A90B8"):
+                        child.configure(fg="#FFFFFF",
+                                        activeforeground="#FFFFFF")
+                    elif bg in ("#E0E0E0", "#454545"):
+                        child.configure(fg=colors["subtext"],
+                                        activeforeground=colors["subtext"])
+                fix_buttons(child)
+
+        fix_buttons(widget)
+
+    def set_theme(dark):
+        """Мягкая тёмная/светлая тема: перекрашивает всё окно по палитре."""
+        theme_state["dark"] = dark
+        apply_theme_tree(root, dark)
 
         colors = palette()
         select_btn.configure(bg=colors["accent"], fg="#FFFFFF",
@@ -3574,6 +3594,7 @@ def run_gui():
                  fg=WIN11_SUBTEXT).pack(side="bottom", pady=(0, 10))
         # Окно прогресса НЕ выводим поверх остальных и не забираем фокус:
         # иначе имитатор клавиш печатает в него, а Schemagee ничего не делает.
+        apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", False)
         win.update_idletasks()
         prog["win"] = win
@@ -3636,6 +3657,7 @@ def run_gui():
         _button(btns, "Закрыть", lambda: close_app(0),
                 primary=False).pack(side="left")
 
+        apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
         win.focus_force()
 
@@ -3680,6 +3702,7 @@ def run_gui():
 
         _button(card_b, "Закрыть", lambda: close_app(0)).pack(side="bottom",
                                                              pady=(14, 0))
+        apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
         win.focus_force()
 
@@ -3705,6 +3728,7 @@ def run_gui():
         _button(card_e, "OK", lambda: close_app(1)).pack(side="bottom",
                                                          pady=(16, 0))
 
+        apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
         win.focus_force()
 
@@ -3733,6 +3757,7 @@ def run_gui():
         _button(card_t, "OK", lambda: close_app(2)).pack(side="bottom",
                                                          pady=(16, 0))
 
+        apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
         win.focus_force()
 

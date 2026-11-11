@@ -23,7 +23,7 @@ ToDXF\
 ├─ CHANGELOG.md             история изменений по версиям
 ├─ ROADMAP.md               планы и идеи
 ├─ input\                   26 DXF (результат экспорта) — данные для тестов
-├─ dist\                    собранный ToDXF_v1.exe (локально, не в git)
+├─ dist\                    собранный ToDXF.exe (локально, не в git)
 └─ tests\                   локальные проверки (не входят в exe)
 ```
 
@@ -65,7 +65,7 @@ python ToDXF_v1.py --headless --dxf-folder input --name check
 python -m PyInstaller ToDXF_v1.spec --clean --noconfirm
 ```
 
-Результат: `dist\ToDXF_v1.exe` (onefile, ~30 МБ). Папка `build\`
+Результат: `dist\ToDXF.exe` (onefile, ~30 МБ). Папка `build\`
 пересоздаётся и в репозиторий не входит.
 
 ## Тесты
