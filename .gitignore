@@ -16,7 +16,7 @@ docs/live*.txt
 docs/push*.txt
 
 # Пользовательские настройки (создаются при запуске)
-ToDXF_settings.json
+ToDWG_settings.json
 
 # Не публикуется на GitHub
 Примеры/

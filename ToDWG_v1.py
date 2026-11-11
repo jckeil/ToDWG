@@ -1,7 +1,7 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # =============================================================================
 #
-#   ToDXF v1.0
+#   ToDWG v1.0
 #   Один файл, один exe: Schemagee (.sdd) -> DXF -> DWG.
 #
 #   Структура файла (блоки идут строго по порядку):
@@ -69,18 +69,18 @@ from ezdxf.xref import ConflictPolicy
 # БЛОК 0. НАСТРОЙКИ, ПУТИ, ЛОГИРОВАНИЕ
 # =============================================================================
 
-APP_NAME = "ToDXF"
-APP_VERSION = "v1.3"
+APP_NAME = "ToDWG"
+APP_VERSION = "v1.4"
 APP_FULL_TITLE = f"{APP_NAME} {APP_VERSION} — Schemagee → DXF → DWG"
 APP_INNER_TEXT = "Schemagee → DXF → DWG"
-APP_USER_MODEL_ID = "Sintek.ToDXF.V1"
+APP_USER_MODEL_ID = "Sintek.ToDWG.V1"
 
-ICON_FILENAME = "Logo_toDXF.ico"
+ICON_FILENAME = "Logo_toDWG.ico"
 
 # Настройки, которые переживают перезапуск (последняя папка выбора файла).
-SETTINGS_FILENAME = "ToDXF_settings.json"
+SETTINGS_FILENAME = "ToDWG_settings.json"
 
-LOG_FILENAME = "ToDXF.log"
+LOG_FILENAME = "ToDWG.log"
 LOG_MAX_BYTES = 2 * 1024 * 1024
 
 STOP_HOTKEY = "ctrl+alt+0"

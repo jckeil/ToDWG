@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-# ToDXF v1.1 — один exe, без внешних файлов рядом.
+# ToDWG v1.1 — один exe, без внешних файлов рядом.
 # Иконка вшивается в ресурсы и извлекается через sys._MEIPASS.
 # tkinterdnd2 несёт бинарники tkdnd — их нужно включить в сборку.
 
@@ -9,10 +9,10 @@ from PyInstaller.utils.hooks import collect_data_files
 dnd_datas = collect_data_files('tkinterdnd2')
 
 a = Analysis(
-    ['ToDXF_v1.py'],
+    ['ToDWG_v1.py'],
     pathex=[],
     binaries=[],
-    datas=[('Logo_toDXF.ico', '.')] + dnd_datas,
+    datas=[('Logo_toDWG.ico', '.')] + dnd_datas,
     hiddenimports=[
         'ctypes.wintypes',
         'keyboard',
@@ -45,7 +45,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ToDXF',
+    name='ToDWG_v1.4',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -58,5 +58,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['Logo_toDXF.ico'],
+    icon=['Logo_toDWG.ico'],
 )

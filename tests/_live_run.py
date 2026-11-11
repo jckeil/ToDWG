@@ -2,7 +2,7 @@
 """Живой прогон указанного .sdd через Schemagee (без GUI).
 
 Использование:
-    python tests\\_live_run.py "D:\\ToDXF\\Примеры\\file.sdd" [--sheets N]
+    python tests\\_live_run.py "D:\\ToDWG\\Примеры\\file.sdd" [--sheets N]
 
 Без --sheets число листов определяется автоматически (диалог печати).
 Во время работы нельзя трогать мышь и клавиатуру.
@@ -13,7 +13,7 @@ import sys
 import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDXF_v1 as app
+import ToDWG_v1 as app
 
 try:                        # консоль Windows может быть в cp1251
     sys.stdout.reconfigure(errors="replace")

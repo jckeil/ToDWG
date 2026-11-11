@@ -7,7 +7,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDXF_v1 as m
+import ToDWG_v1 as m
 
 m.init_log()
 
@@ -29,7 +29,7 @@ def main():
 
     bad = []
     for fmt, landscape, exp_w, exp_h in CASES:
-        tmp = tempfile.mkdtemp(prefix="ToDXF_paper_")
+        tmp = tempfile.mkdtemp(prefix="ToDWG_paper_")
         try:
             src = os.path.join(tmp, "src")
             os.makedirs(src)

@@ -13,7 +13,7 @@ import tempfile
 import ezdxf
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDXF_v1 as m
+import ToDWG_v1 as m
 
 m.init_log()
 
@@ -48,7 +48,7 @@ for name, err in bad:
     print("  PROBLEM:", name, "-", err)
 
 # Пустой DXF не должен считаться сохранённым листом.
-empty_path = os.path.join(tempfile.gettempdir(), "ToDXF_empty.dxf")
+empty_path = os.path.join(tempfile.gettempdir(), "ToDWG_empty.dxf")
 ezdxf.new("R2018").saveas(empty_path)
 empty_ok = m._dxf_has_content(empty_path) is False
 print("пустой DXF отклонён:", empty_ok)
@@ -56,7 +56,7 @@ if not empty_ok:
     bad.append(("_dxf_has_content", "пустой DXF принят за успех"))
 
 # DXF в UTF-8 (R2018) должен читаться без порчи русского текста.
-utf_path = os.path.join(tempfile.gettempdir(), "ToDXF_utf8.dxf")
+utf_path = os.path.join(tempfile.gettempdir(), "ToDWG_utf8.dxf")
 utf_doc = ezdxf.new("R2018")
 utf_doc.modelspace().add_text("Проверка шрифта", dxfattribs={"height": 2.5})
 utf_doc.saveas(utf_path)

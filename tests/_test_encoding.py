@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDXF_v1 as m
+import ToDWG_v1 as m
 
 m.init_log()
 
@@ -37,7 +37,7 @@ def main():
         if "Формат" not in joined and "Копировал" not in joined:
             bad.append((os.path.basename(path), joined[:80]))
 
-    tmp = tempfile.mkdtemp(prefix="ToDXF_enc_")
+    tmp = tempfile.mkdtemp(prefix="ToDWG_enc_")
     try:
         src = os.path.join(tmp, "src")
         os.makedirs(src)

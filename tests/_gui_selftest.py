@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDXF_v1 as app
+import ToDWG_v1 as app
 
 report = []
 
@@ -136,7 +136,7 @@ def mainloop_stub(self, n=0):
 tk.Tk.mainloop = mainloop_stub
 code = app.run_gui()
 
-out_path = os.path.join(tempfile.gettempdir(), "ToDXF_gui_selftest.txt")
+out_path = os.path.join(tempfile.gettempdir(), "ToDWG_gui_selftest.txt")
 with open(out_path, "w", encoding="utf-8") as f:
     for item in report:
         f.write("|".join(str(x) for x in item) + "\n")

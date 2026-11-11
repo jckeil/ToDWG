@@ -15,7 +15,7 @@ import win32con
 import win32gui
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDXF_v1 as m
+import ToDWG_v1 as m
 
 m.init_log()
 results = []
@@ -110,7 +110,7 @@ root.destroy()
 lines = list(results)
 lines.append("ИТОГ: " + ("OK" if not any(x.startswith("FAIL") for x in results)
                          else "ЕСТЬ ОШИБКИ"))
-with open(os.path.join(tempfile.gettempdir(), "ToDXF_test_export.txt"),
+with open(os.path.join(tempfile.gettempdir(), "ToDWG_test_export.txt"),
           "w", encoding="utf-8") as fh:
     fh.write("\n".join(lines) + "\n")
 for line in lines:

@@ -1,10 +1,10 @@
-# ToDXF v1.3 — Schemagee → DXF → DWG
+# ToDWG v1.4 — Schemagee → DXF → DWG
 
 Автоматизирует штатный экспорт листов из Schemagee 3.5 (`.sdd`) в DXF и
 собирает из них один альбом DWG: схемы в пространстве модели в ряд и по
 отдельному layout на каждый лист (A2).
 
-Всё в одном файле `ToDXF_v1.py`; exe не зависит от места запуска и
+Всё в одном файле `ToDWG_v1.py`; exe не зависит от места запуска и
 соседних файлов. Результаты и лог пишутся в папку
 `<ИМЯ>_<ГГГГ-ММ-ДД-ЧЧ-ММ-СС>` рядом с exe.
 
@@ -14,27 +14,27 @@
 ## Структура проекта
 
 ```
-ToDXF\
-├─ ToDXF_v1.py              основной скрипт (кликер + конвертер + GUI)
-├─ ToDXF_v1.spec            сборка PyInstaller (onefile, без консоли)
-├─ Logo_toDXF.ico           иконка, вшивается в exe
+ToDWG\
+├─ ToDWG_v1.py              основной скрипт (кликер + конвертер + GUI)
+├─ ToDWG_v1.spec            сборка PyInstaller (onefile, без консоли)
+├─ Logo_toDWG.ico           иконка, вшивается в exe
 ├─ README.md                краткое описание и запуск
 ├─ FEATURES.md              список всех возможностей
 ├─ CHANGELOG.md             история изменений по версиям
 ├─ ROADMAP.md               планы и идеи
 ├─ input\                   26 DXF (результат экспорта) — данные для тестов
-├─ dist\                    собранный ToDXF.exe (локально, не в git)
+├─ dist\                    собранный ToDWG_v1.4.exe (локально, не в git)
 └─ tests\                   локальные проверки (не входят в exe)
 ```
 
 Не публикуются в репозитории (в `.gitignore`): `Примеры\` с исходными
-`.sdd`, `ToDXF (исходники)\`, `archive\` и `docs\` с отчётами и планом.
+`.sdd`, `ToDWG (исходники)\`, `archive\` и `docs\` с отчётами и планом.
 
 ## Запуск из исходников
 
 ```powershell
-python ToDXF_v1.py                 # GUI
-python ToDXF_v1.py --headless --dxf-folder input --name check
+python ToDWG_v1.py                 # GUI
+python ToDWG_v1.py --headless --dxf-folder input --name check
 ```
 
 Ключи (только для отладки):
@@ -62,10 +62,10 @@ python ToDXF_v1.py --headless --dxf-folder input --name check
 ## Сборка exe
 
 ```powershell
-python -m PyInstaller ToDXF_v1.spec --clean --noconfirm
+python -m PyInstaller ToDWG_v1.spec --clean --noconfirm
 ```
 
-Результат: `dist\ToDXF.exe` (onefile, ~30 МБ). Папка `build\`
+Результат: `dist\ToDWG_v1.4.exe` (onefile, ~30 МБ). Папка `build\`
 пересоздаётся и в репозиторий не входит.
 
 ## Тесты
