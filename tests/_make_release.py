@@ -5,7 +5,7 @@
 тело релиза — из CHANGELOG.md.
 
 Использование:
-    python tests\\_make_release.py v1.5 [путь\\к\\ToDWG_v1.5.exe]
+    python tests\\_make_release.py v1.6 [путь\\к\\ToDWG_v1.6.exe]
 """
 import json
 import os
@@ -22,7 +22,7 @@ CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
 
 
 def default_asset(version):
-    """Путь к exe версии: dist\\ToDWG_v1.5.exe."""
+    """Путь к exe версии: dist\\ToDWG_v1.6.exe."""
     return os.path.join(ROOT, "dist", f"ToDWG_{version}.exe")
 
 
@@ -79,7 +79,7 @@ def main():
     if not TOKEN:
         print("нет GH_TOKEN")
         return 1
-    version = sys.argv[1] if len(sys.argv) > 1 else "v1.5"
+    version = sys.argv[1] if len(sys.argv) > 1 else "v1.6"
     asset = sys.argv[2] if len(sys.argv) > 2 else default_asset(version)
 
     text = open(CHANGELOG, encoding="utf-8").read()
