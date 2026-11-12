@@ -1,0 +1,89 @@
+108 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.8
+112 INFO: Python: 3.14.8
+173 INFO: Platform: Windows-11-10.0.26200-SP0
+178 INFO: Python environment: C:\Users\k.klochkov\AppData\Local\Python\pythoncore-3.14-64
+201 INFO: Removing temporary files and cleaning cache in C:\Users\k.klochkov\AppData\Local\pyinstaller
+250 INFO: Module search paths (PYTHONPATH):
+['D:\\ToDWG',
+ 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\python314.zip',
+ 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs',
+ 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib',
+ 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64',
+ 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages',
+ 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\win32',
+ 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\win32\\lib',
+ 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\pythonwin',
+ 'D:\\ToDWG']
+589 INFO: Appending 'datas' from .spec
+595 INFO: checking Analysis
+595 INFO: Building Analysis because Analysis-00.toc is non existent
+596 INFO: Looking for Python shared library...
+596 INFO: Using Python shared library: C:\Users\k.klochkov\AppData\Local\Python\pythoncore-3.14-64\python314.dll
+596 INFO: Running Analysis Analysis-00.toc
+596 INFO: Target bytecode optimization level: 0
+597 INFO: Initializing module dependency graph...
+598 INFO: Initializing module graph hook caches...
+607 INFO: Analyzing modules for base_library.zip ...
+1847 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+2203 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+2332 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+2409 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+2416 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+4299 INFO: Caching module dependency graph...
+4323 INFO: Analyzing D:\ToDWG\ToDWG_v1.py
+4522 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+4527 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+4545 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+4546 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+4935 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+4998 INFO: Processing standard module hook 'hook-tkinterdnd2.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\tkinterdnd2\\__pyinstaller'
+5089 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+5362 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5363 INFO: SetuptoolsInfo: initializing cached setuptools info...
+5976 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+6044 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+6663 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+7310 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+10248 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+13152 INFO: Processing pre-safe-import-module hook 'hook-win32com.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\pre_safe_import_module'
+13234 INFO: Processing standard module hook 'hook-win32com.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+13243 INFO: Processing standard module hook 'hook-pythoncom.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+13416 INFO: Processing standard module hook 'hook-pywintypes.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+13812 INFO: Analyzing hidden import 'win32timezone'
+13834 INFO: Processing module hooks (post-graph stage)...
+13922 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+13930 INFO: Performing binary vs. data reclassification (119 entries)
+13948 INFO: Looking for ctypes DLLs
+14015 INFO: Analyzing run-time hooks ...
+14018 INFO: Including run-time hook 'pyi_rth_pythoncom.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+14020 INFO: Including run-time hook 'pyi_rth_pywintypes.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+14026 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+14028 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+14030 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+14031 INFO: Including run-time hook 'pyi_rth__tkinter.py' from 'C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+14043 INFO: Creating base_library.zip...
+14058 INFO: Looking for dynamic libraries
+14603 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\k.klochkov\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\numpy.libs']
+14605 INFO: Extra DLL search directories (PATH): []
+15143 INFO: Warnings written to D:\ToDWG\build\ToDWG_v1\warn-ToDWG_v1.txt
+15194 INFO: Graph cross-reference written to D:\ToDWG\build\ToDWG_v1\xref-ToDWG_v1.html
+15220 INFO: checking PYZ
+15221 INFO: Building PYZ because PYZ-00.toc is non existent
+15221 INFO: Building PYZ (ZlibArchive) D:\ToDWG\build\ToDWG_v1\PYZ-00.pyz
+15658 INFO: Building PYZ (ZlibArchive) D:\ToDWG\build\ToDWG_v1\PYZ-00.pyz completed successfully.
+15731 INFO: checking PKG
+15731 INFO: Building PKG because PKG-00.toc is non existent
+15732 INFO: Building PKG (CArchive) ToDWG_v1.7.pkg
+17959 INFO: Building PKG (CArchive) ToDWG_v1.7.pkg completed successfully.
+17963 INFO: Bootloader C:\Users\k.klochkov\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+17963 INFO: checking EXE
+17964 INFO: Building EXE because EXE-00.toc is non existent
+17964 INFO: Building EXE from EXE-00.toc
+17965 INFO: Copying bootloader EXE to D:\ToDWG\dist\ToDWG_v1.7.exe
+17968 INFO: Copying icon to EXE
+17972 INFO: Copying 0 resources to EXE
+17973 INFO: Embedding manifest in EXE
+17976 INFO: Appending PKG archive to EXE
+17994 INFO: Fixing EXE headers
+18360 INFO: Building EXE from EXE-00.toc completed successfully.
+18364 INFO: Build complete! The results are available in: D:\ToDWG\dist
