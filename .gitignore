@@ -15,6 +15,10 @@ docs/build*.txt
 docs/live*.txt
 docs/push*.txt
 
+# Временные файлы отладки и сборки
+_*.txt
+_*_tmp.py
+
 # Пользовательские настройки (создаются при запуске)
 ToDWG_settings.json
 
