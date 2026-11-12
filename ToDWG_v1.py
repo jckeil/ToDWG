@@ -4292,8 +4292,8 @@ def run_gui():
             orient_combo.config(state="disabled")
             if hint_label is not None:
                 hint_label.config(fg=subtext)
-            hint_var.set("Для нескольких файлов ручные листы и формат "
-                         "недоступны — у каждого файла свои параметры.")
+            hint_var.set("Для нескольких файлов указание количества листов "
+                         "и формата документа недоступны")
             state, cursor = "disabled", "arrow"
         else:
             on_toggle()
