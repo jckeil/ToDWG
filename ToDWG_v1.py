@@ -4236,7 +4236,7 @@ def run_gui():
     spin.pack(side="left", padx=(12, 0))
 
     format_row = tk.Frame(opts, bg=WIN11_CARD_BG)
-    format_row.pack(anchor="w", pady=(2, 0))
+    format_row.pack(anchor="w", pady=(10, 0))
     make_check(format_row, "Выбрать формат листа вручную", format_var,
                on_toggle_format).pack(side="left")
     format_combo = ttk.Combobox(format_row, values=list(PAPER_FORMATS),
@@ -4278,7 +4278,7 @@ def run_gui():
     red_top.pack(pady=(14, 0))
     tk.Label(card, text="ДЛЯ АВАРИЙНОЙ ОСТАНОВКИ НАЖМИТЕ CTRL+ALT+0",
              font=FONT_WARN, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
-             justify="center").pack()
+             justify="center").pack(pady=(10, 0))
 
     hint_label = tk.Label(card, textvariable=hint_var, font=FONT_BODY_SM,
                           bg=WIN11_CARD_BG, fg=WIN11_DANGER)
@@ -4715,8 +4715,9 @@ def run_gui():
                      fg=color, anchor="w").grid(
                 row=row, column=col + 1, sticky="w", padx=(4, 22), pady=1)
 
-        count_src = stats.get("sheet_count_source") or "—"
-        manual = "вручную" in str(count_src).lower()
+        raw_src = str(stats.get("sheet_count_source") or "")
+        manual = "вручную" in raw_src.lower()
+        count_src = "вручную" if manual else "автоматически"
         cell(0, 0, "Листов:",
              f"{stats.get('sheet_count', 0)} ({count_src})",
              WIN11_ACCENT if manual else WIN11_TEXT)
@@ -4744,13 +4745,17 @@ def run_gui():
 
         btns = tk.Frame(card_s, bg=WIN11_CARD_BG)
         btns.pack(side="bottom", pady=(10, 14))
-        _button(btns, "Открыть папку",
-                lambda: _open_folder(stats.get("out_dir", "")),
-                primary=False).pack(side="left", padx=(0, 8))
-        _button(btns, "Закрыть отчет",
-                lambda: close_report(win)).pack(side="left", padx=(0, 8))
-        _button(btns, "Завершить работу", lambda: close_app(0),
-                primary=False).pack(side="left")
+        b_open = _button(btns, "Открыть папку",
+                         lambda: _open_folder(stats.get("out_dir", "")))
+        b_open.config(width=16)
+        b_open.pack(side="left", padx=(0, 10))
+        b_close = _button(btns, "Закрыть отчет",
+                          lambda: close_report(win))
+        b_close.config(width=16)
+        b_close.pack(side="left", padx=(0, 10))
+        b_exit = _button(btns, "Завершить работу", lambda: close_app(0))
+        b_exit.config(width=16)
+        b_exit.pack(side="left")
 
         apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
@@ -4787,45 +4792,93 @@ def run_gui():
         tk.Frame(card_b, bg=WIN11_BORDER, height=1).pack(fill="x", padx=24,
                                                           pady=(0, 6))
 
-        txt = tk.Frame(card_b, bg=WIN11_CARD_BG)
-        txt.pack(fill="both", expand=True, padx=18)
-        text = tk.Text(txt, height=14, font=FONT_BODY_SM,
-                       bg=WIN11_CARD_BG, fg=WIN11_TEXT, bd=0,
-                       highlightthickness=0, wrap="word")
-        scroll = ttk.Scrollbar(txt, orient="vertical", command=text.yview)
-        text.configure(yscrollcommand=scroll.set)
-        text.pack(side="left", fill="both", expand=True)
+        list_frame = tk.Frame(card_b, bg=WIN11_CARD_BG)
+        list_frame.pack(fill="both", expand=True, padx=16)
+        canvas = tk.Canvas(list_frame, bg=WIN11_CARD_BG,
+                           highlightthickness=0, bd=0)
+        scroll = ttk.Scrollbar(list_frame, orient="vertical",
+                               command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
-        for index, item in enumerate(results):
+        canvas.pack(side="left", fill="both", expand=True)
+        inner = tk.Frame(canvas, bg=WIN11_CARD_BG)
+        canvas.create_window((0, 0), window=inner, anchor="nw", width=676)
+        inner.bind("<Configure>",
+                   lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        def wheel(event):
+            try:
+                delta = int(-1 * (event.delta / 120))
+            except Exception:
+                delta = -1 if event.delta > 0 else 1
+            canvas.yview_scroll(delta, "units")
+            return "break"
+
+        def small_button(parent, text, command):
+            return tk.Button(parent, text=text, command=command,
+                             font=FONT_BODY_SM, bg="#E5E5E5", fg=WIN11_TEXT,
+                             activebackground="#D6D6D6",
+                             activeforeground=WIN11_TEXT, relief="flat",
+                             bd=0, highlightthickness=0, cursor="hand2",
+                             padx=8, pady=1)
+
+        for item in results:
             source = os.path.basename(item.get("source") or "?")
-            if item.get("error"):
-                text.insert("end", f"✗ {source}\n   {item['error']}\n")
+            is_err = bool(item.get("error"))
+            row = tk.Frame(inner, bg=WIN11_CARD_BG)
+            row.pack(fill="x", pady=(0, 6))
+            head = tk.Frame(row, bg=WIN11_CARD_BG)
+            head.pack(fill="x")
+            tk.Label(head, text=f"{'✗' if is_err else '✓'} {source}",
+                     font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+                     fg=WIN11_DANGER if is_err else WIN11_OK,
+                     anchor="w").pack(side="left")
+            out_dir = item.get("out_dir")
+            if not is_err and out_dir:
+                small_button(head, "Открыть папку",
+                             lambda p=out_dir: _open_folder(p)).pack(
+                    side="right")
+            if is_err:
+                tk.Label(row, text=str(item.get("error")),
+                         font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+                         fg=WIN11_DANGER, anchor="w", justify="left",
+                         wraplength=650).pack(anchor="w")
             else:
-                text.insert(
-                    "end",
-                    f"✓ {source}\n"
-                    f"   листов {item.get('sheet_count')} "
-                    f"({item.get('sheet_count_source') or '—'}) · "
-                    f"схем {item.get('placed')} · "
-                    f"ошибок {item.get('errors')}\n"
-                    f"   экспорт {format_duration(item.get('conv_time', 0.0))} · "
-                    f"сборка {format_duration(item.get('merge_time', 0.0))}\n"
-                    f"   {item.get('target') or ''}\n")
-            if index < len(results) - 1:
-                text.insert("end", "\n")
-        text.config(state="disabled")
+                raw_src = str(item.get("sheet_count_source") or "")
+                src_label = ("вручную" if "вручную" in raw_src.lower()
+                             else "автоматически")
+                tk.Label(row,
+                         text=(f"листов {item.get('sheet_count')} ({src_label})"
+                               f" · схем {item.get('placed')}"
+                               f" · ошибок {item.get('errors')}"),
+                         font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+                         fg=WIN11_SUBTEXT, anchor="w").pack(anchor="w")
+                tk.Label(row,
+                         text=(f"экспорт "
+                               f"{format_duration(item.get('conv_time', 0.0))}"
+                               f" · сборка "
+                               f"{format_duration(item.get('merge_time', 0.0))}"),
+                         font=FONT_VERSION, bg=WIN11_CARD_BG,
+                         fg=WIN11_SUBTEXT, anchor="w").pack(anchor="w")
+                tk.Label(row, text=str(item.get("target") or ""),
+                         font=FONT_VERSION, bg=WIN11_CARD_BG,
+                         fg=WIN11_SUBTEXT, anchor="w", justify="left",
+                         wraplength=650).pack(anchor="w")
+            tk.Frame(inner, bg=WIN11_BORDER, height=1).pack(fill="x",
+                                                            pady=(0, 6))
+            for widget in (row, head) + tuple(row.winfo_children()):
+                widget.bind("<MouseWheel>", wheel)
+        canvas.bind("<MouseWheel>", wheel)
 
         btns = tk.Frame(card_b, bg=WIN11_CARD_BG)
         btns.pack(side="bottom", pady=(10, 14))
-        first_ok = next((r for r in ok_items if r.get("out_dir")), None)
-        if first_ok is not None:
-            _button(btns, "Открыть папку",
-                    lambda p=first_ok["out_dir"]: _open_folder(p),
-                    primary=False).pack(side="left", padx=(0, 8))
-        _button(btns, "Закрыть отчет",
-                lambda: close_report(win)).pack(side="left", padx=(0, 8))
-        _button(btns, "Завершить работу", lambda: close_app(0),
-                primary=False).pack(side="left")
+        b_close = _button(btns, "Закрыть отчет",
+                          lambda: close_report(win))
+        b_close.config(width=16)
+        b_close.pack(side="left", padx=(0, 10))
+        b_exit = _button(btns, "Завершить работу", lambda: close_app(0))
+        b_exit.config(width=16)
+        b_exit.pack(side="left")
 
         apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
