@@ -288,35 +288,53 @@ def is_elevated():
         return False
 
 
-# --- Лог: общий рядом с exe + отдельный на каждый запуск ----------------------
+# --- Лог: один файл в папке настроек, только при включённом журнале -----------
 _global_log = None
 _run_log = None
 _run_log_path = None
+_LOG_ENABLED = None   # None — ещё не читали настройку
 
 
 def _rotate(path):
-    try:
-        if os.path.isfile(path) and os.path.getsize(path) > LOG_MAX_BYTES:
-            old = path + ".1"
-            if os.path.isfile(old):
-                os.remove(old)
-            os.replace(path, old)
-    except Exception:
-        pass
+    """Оставлено для совместимости: журнал теперь перезаписывается на запуск."""
+    return None
 
 
 def init_log():
-    """Открывает общий лог рядом с exe (с ротацией)."""
-    global _global_log
-    path = os.path.join(BASE_DIR, LOG_FILENAME)
+    """Открывает журнал в папке настроек; файл перезаписывается на запуск.
+
+    Если журнал выключен в настройках, файл не создаётся и не изменяется.
+    """
+    global _global_log, _LOG_ENABLED
     try:
-        _rotate(path)
-        _global_log = open(path, "a", encoding="utf-8", buffering=1)
-        _global_log.write("\n" + "=" * 70 + "\n")
+        if _global_log:
+            _global_log.close()
+    except Exception:
+        pass
+    _global_log = None
+    if _LOG_ENABLED is None:
+        try:
+            _LOG_ENABLED = bool(load_settings().get("save_log", False))
+        except Exception:
+            _LOG_ENABLED = False
+    if not _LOG_ENABLED:
+        return
+    path = os.path.join(settings_dir(), LOG_FILENAME)
+    try:
+        # "w" — без накопления: содержимое прошлого запуска заменяется.
+        _global_log = open(path, "w", encoding="utf-8", buffering=1)
+        _global_log.write("=" * 70 + "\n")
         _global_log.write(f"ЗАПУСК: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n")
         _global_log.write("=" * 70 + "\n")
     except Exception:
         _global_log = None
+
+
+def set_logging_enabled(enabled):
+    """Включает/выключает журнал на лету (после сохранения настроек)."""
+    global _LOG_ENABLED
+    _LOG_ENABLED = bool(enabled)
+    init_log()
 
 
 def attach_run_log(path):
@@ -3676,8 +3694,6 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     check_stop()
 
     run_dir = make_run_folder(name, out_dir)
-    if save_log:
-        attach_run_log(os.path.join(run_dir, LOG_FILENAME))
     log(f"Папка результата: {run_dir}")
 
     t_conv = time.time()
@@ -3696,8 +3712,8 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
         log(f"Не удалось закрыть Schemagee: {e}")
 
     if not produced:
-        details = (os.path.join(run_dir, LOG_FILENAME) if save_log
-                   else os.path.join(BASE_DIR, LOG_FILENAME))
+        details = (os.path.join(settings_dir(), LOG_FILENAME) if save_log
+                   else "журнал выключен (галочка «Сохранять журнал конвертирования»)")
         raise RuntimeError(
             f"Ни один лист не сохранён (0 из {sheet_count}).\n\n"
             f"Подробности: {details}"
@@ -3711,7 +3727,19 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
                       paper_w=paper_w, paper_h=paper_h)
     merge_time = time.time() - t_merge
 
-    if not save_log:
+    if save_log:
+        # Журнал и служебные файлы — в папке настроек, без захламления папки
+        # с результатом; файлы перезаписываются (без накопления).
+        _placed = os.path.join(run_dir, "placed.json")
+        if os.path.isfile(_placed):
+            try:
+                _dst = os.path.join(settings_dir(), "placed.json")
+                if os.path.isfile(_dst):
+                    os.remove(_dst)
+                shutil.move(_placed, _dst)
+            except Exception as e:
+                log(f"Не удалось перенести placed.json: {e}")
+    else:
         # Пользователю служебные файлы рядом с DWG не нужны.
         _service = os.path.join(run_dir, "placed.json")
         try:
@@ -3760,7 +3788,7 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
         "version": APP_VERSION,
     }
     if save_log:
-        write_result_json(run_dir, stats)
+        write_result_json(settings_dir(), stats)
     emit("success", stats)
     return stats
 
@@ -3800,7 +3828,6 @@ def run_headless(opts):
 
     name = opts.get("name") or derive_name_from_dxf(files)
     run_dir = make_run_folder(name, opts.get("out_dir"))
-    attach_run_log(os.path.join(run_dir, LOG_FILENAME))
     log(f"Режим без кликера: {len(files)} DXF из {folder}")
     log(f"Папка результата: {run_dir}")
 
@@ -4511,35 +4538,35 @@ def run_gui():
         name_labels = []
 
         def on_speed(value):
-            level = int(round(float(value)))
-            set_clicker_speed(level)
-            speed_value.set(f"«{speed_name()}»")
-            update_setting("speed", level)
-            update_setting("speed_drop_streak", 0)
-            log(f"Скорость кликера: «{speed_name()}» "
-                f"({level}/3) — выбрана вручную.")
+            level = max(0, min(len(SPEED_LEVELS) - 1,
+                               int(round(float(value)))))
+            speed_var.set(level)
+            speed_value.set(f"«{SPEED_LEVELS[level]}»")
 
         delays_var = tk.BooleanVar(value=bool(_CLICKER["delays"]))
 
         def sync_delays():
-            on = set_clicker_delays(delays_var.get())
-            update_setting("delays", on)
-            apply_delays_visuals(on)
-            log(f"Задержки кликера: "
-                f"{'включены' if on else 'отключены (скорость максимальная)'}.")
+            apply_delays_visuals(bool(delays_var.get()))
 
-        check_row("Задержки кликера (паузы между шагами)", delays_var,
+        # Черновик настроек: в конфиг попадает только по «Сохранить и закрыть».
+        dlg_save_log = tk.BooleanVar(value=save_log_var.get())
+        dlg_delete = tk.BooleanVar(value=delete_var.get())
+        dlg_report = tk.BooleanVar(value=report_var.get())
+        dlg_block_mouse = tk.BooleanVar(value=mouse_block_var.get())
+
+        check_row("Задержки кликера (для медленных ПК)", delays_var,
                   sync_delays,
                   "Паузы между шагами кликера (нажатия, переходы). Включены — "
                   "скорость задаётся ползунком ниже. Если снять — паузы почти "
-                  "убираются (×0.1), скорость максимальная; программа опирается "
-                  "на опрос состояния и повторы — быстрее, но на медленных ПК "
-                  "возможны повторы.")
+                  "убираются (×0.1), ползунок скорости скрывается (скорость "
+                  "максимальная); программа опирается на опрос состояния и "
+                  "повторы — быстрее, но на медленных ПК возможны повторы.")
         tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
             fill="x", padx=26, pady=(8, 4))
 
-        speed_head = tk.Frame(card_s, bg=WIN11_CARD_BG)
-        speed_head.pack(anchor="w", padx=40, pady=(0, 2))
+        speed_area = tk.Frame(card_s, bg=WIN11_CARD_BG)
+        speed_area.pack(anchor="w", fill="x")
+        speed_head = tk.Frame(speed_area, bg=WIN11_CARD_BG)
         speed_title_label = tk.Label(speed_head, text="Скорость кликера:",
                                      font=FONT_BODY_SM, bg=WIN11_CARD_BG,
                                      fg=WIN11_TEXT)
@@ -4549,13 +4576,12 @@ def run_gui():
                                      fg=WIN11_ACCENT)
         speed_value_label.pack(side="left", padx=(6, 0))
         speed_scale = tk.Scale(
-            card_s, from_=0, to=3, resolution=1, orient="horizontal",
+            speed_area, from_=0, to=3, resolution=1, orient="horizontal",
             showvalue=0, length=360, width=16, sliderlength=22,
             bg="#E5E5E5", fg=WIN11_TEXT, troughcolor="#808080",
             activebackground=WIN11_ACCENT, highlightthickness=1,
             highlightbackground=WIN11_BORDER, bd=1,
             sliderrelief="raised", variable=speed_var, command=on_speed)
-        speed_scale.pack(anchor="w", padx=40)
 
         def block_scale_when_off(event):
             return "break" if not delays_var.get() else None
@@ -4564,8 +4590,7 @@ def run_gui():
                      "<MouseWheel>", "<KeyPress>"):
             speed_scale.bind(_seq, block_scale_when_off)
 
-        names = tk.Frame(card_s, bg=WIN11_CARD_BG, width=360, height=16)
-        names.pack(anchor="w", padx=40)
+        names = tk.Frame(speed_area, bg=WIN11_CARD_BG, width=360, height=16)
         names.pack_propagate(False)
         for text, x, anchor in (("Медленно", 0, "nw"),
                                 ("Оптимально", 120, "n"),
@@ -4576,14 +4601,24 @@ def run_gui():
             name_label.place(x=x, y=0, anchor=anchor)
             name_labels.append(name_label)
 
-        scale_hint = tk.Label(card_s, text="", font=FONT_VERSION,
+        scale_hint = tk.Label(speed_area, text="", font=FONT_VERSION,
                               bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT,
                               anchor="w", justify="left")
-        scale_hint.pack(anchor="w", fill="x", padx=40, pady=(2, 8))
 
         def apply_delays_visuals(on):
             if speed_scale is None:
                 return
+            if on:
+                scale_hint.pack_forget()
+                speed_head.pack(anchor="w", padx=40, pady=(0, 2))
+                speed_scale.pack(anchor="w", padx=40)
+                names.pack(anchor="w", padx=40)
+            else:
+                # Без задержек скорость не настраивается — ползунок скрыт.
+                speed_head.pack_forget()
+                speed_scale.pack_forget()
+                names.pack_forget()
+                scale_hint.pack(anchor="w", fill="x", padx=40, pady=(6, 8))
             dark = bool(theme_state["dark"])
             dim = "#7A7A7A" if dark else "#9A9A9A"
             if on:
@@ -4615,33 +4650,20 @@ def run_gui():
         tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
             fill="x", padx=26, pady=(2, 4))
 
-        def save_log_cmd():
-            update_setting("save_log", save_log_var.get())
-
-        def delete_cmd():
-            update_setting("delete_dxf", delete_var.get())
-
-        def report_cmd():
-            update_setting("show_report", report_var.get())
-
-        def block_mouse_cmd():
-            update_setting("block_mouse", mouse_block_var.get())
-
-        check_row("Сохранять журнал конвертирования", save_log_var,
-                  save_log_cmd,
-                  "Рядом с итоговым .dwg создаются ToDWG.log, result.json и "
-                  "placed.json (служебные файлы). По умолчанию выключено — "
-                  "рядом с DWG остаётся только итоговый файл.", pady=(2, 0))
-        check_row("Удалять .dxf файлы после конвертации", delete_var,
-                  delete_cmd,
+        check_row("Сохранять журнал конвертирования", dlg_save_log, None,
+                  "Журнал и служебные файлы (ToDWG.log, result.json, "
+                  "placed.json) ведутся в папке настроек «Документы\\ToDWG» — "
+                  "рядом с конфигом, а не с DWG. Файлы перезаписываются при "
+                  "каждом запуске (без накопления). По умолчанию выключено — "
+                  "ничего не создаётся.", pady=(2, 0))
+        check_row("Удалять .dxf файлы после конвертации", dlg_delete, None,
                   "Промежуточные DXF листов удаляются после успешной сборки "
                   "альбома. По умолчанию включено — в папке остаётся только "
                   "итоговый .dwg.")
-        check_row("Выводить отчёт по завершении", report_var, report_cmd,
+        check_row("Выводить отчёт по завершении", dlg_report, None,
                   "После конвертации показывается окно с итогами. Если снять — "
                   "отчёт не открывается, происходит возврат в главное окно.")
-        check_row("Блокировать мышь во время конвертации", mouse_block_var,
-                  block_mouse_cmd,
+        check_row("Блокировать мышь во время конвертации", dlg_block_mouse, None,
                   "На время работы мышь не действует (клавиатура активна). "
                   "Аварийный останов Ctrl+Alt+0 снимает блокировку. По "
                   "умолчанию включено.")
@@ -4649,18 +4671,55 @@ def run_gui():
         def close_settings():
             settings_win["win"] = None
             try:
+                win.grab_release()
+            except tk.TclError:
+                pass
+            try:
                 win.destroy()
             except tk.TclError:
                 pass
+
+        def commit_settings():
+            level = max(0, min(len(SPEED_LEVELS) - 1, int(speed_var.get())))
+            on_delays = bool(delays_var.get())
+            save_log_on = bool(dlg_save_log.get())
+            log_was = bool(_LOG_ENABLED)
+            data = load_settings()
+            data.update({
+                "speed": level,
+                "speed_drop_streak": 0,
+                "delays": on_delays,
+                "save_log": save_log_on,
+                "delete_dxf": bool(dlg_delete.get()),
+                "show_report": bool(dlg_report.get()),
+                "block_mouse": bool(dlg_block_mouse.get()),
+            })
+            save_settings(data)
+            save_log_var.set(save_log_on)
+            delete_var.set(bool(dlg_delete.get()))
+            report_var.set(bool(dlg_report.get()))
+            mouse_block_var.set(bool(dlg_block_mouse.get()))
+            set_clicker_speed(level)
+            set_clicker_delays(on_delays)
+            if save_log_on != log_was:
+                set_logging_enabled(save_log_on)
+            log(f"Настройки сохранены: скорость «{SPEED_LEVELS[level]}», "
+                f"задержки {'вкл' if on_delays else 'выкл'}, "
+                f"журнал {'вкл' if save_log_on else 'выкл'}.")
+            close_settings()
 
         win.protocol("WM_DELETE_WINDOW", close_settings)
 
         btns = tk.Frame(card_s, bg=WIN11_CARD_BG)
         btns.pack(side="bottom", pady=(10, 14))
-        _button(btns, "Закрыть", close_settings).pack()
+        _button(btns, "Сохранить и закрыть", commit_settings).pack()
 
         apply_theme_tree(win, theme_state["dark"])
         apply_delays_visuals(bool(delays_var.get()))
+        try:
+            win.grab_set()          # модальное окно: главное неактивно
+        except tk.TclError:
+            pass
         win.focus_force()
 
     tk.Button(card, text="Настройки", command=open_settings,
