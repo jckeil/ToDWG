@@ -3901,6 +3901,10 @@ def run_gui():
     manual_var = tk.BooleanVar(value=False)
     count_var = tk.StringVar(value="1")
     hint_var = tk.StringVar(value="")
+    spin = None
+    manual_check = None
+    format_check = None
+    hint_label = None
     ui_settings = load_settings()
     save_log_var = tk.BooleanVar(value=bool(ui_settings.get("save_log", False)))
     delete_var = tk.BooleanVar(value=bool(ui_settings.get("delete_dxf", True)))
@@ -3942,6 +3946,9 @@ def run_gui():
             return True, None
         raw = count_var.get().strip()
         if not re.fullmatch(r"\d{1,3}", raw) or not (1 <= int(raw) <= 500):
+            if hint_label is not None:
+                hint_label.config(
+                    fg="#D9807A" if theme_state["dark"] else WIN11_DANGER)
             hint_var.set("Укажите число листов числом от 1 до 500.")
             return False, None
         hint_var.set("")
@@ -4126,6 +4133,8 @@ def run_gui():
     def refresh_pending():
         render_pending()
         paint_convert_button(bool(pending))
+        if spin is not None:
+            sync_bulk_controls()
 
     def add_files(paths):
         added = 0
@@ -4234,8 +4243,9 @@ def run_gui():
 
     manual_row = tk.Frame(opts, bg=WIN11_CARD_BG)
     manual_row.pack(anchor="w")
-    make_check(manual_row, "Указать количество листов вручную", manual_var,
-               on_toggle).pack(side="left")
+    manual_check = make_check(manual_row, "Указать количество листов вручную",
+                              manual_var, on_toggle)
+    manual_check.pack(side="left")
     spin = tk.Spinbox(manual_row, from_=1, to=500, width=4,
                       font=FONT_BODY_SM, textvariable=count_var,
                       state="disabled", justify="center", relief="flat",
@@ -4248,8 +4258,10 @@ def run_gui():
 
     format_row = tk.Frame(opts, bg=WIN11_CARD_BG)
     format_row.pack(anchor="w", pady=(10, 0))
-    make_check(format_row, "Выбрать формат листа вручную (beta)", format_var,
-               on_toggle_format).pack(side="left")
+    format_check = make_check(format_row,
+                              "Выбрать формат листа вручную (beta)",
+                              format_var, on_toggle_format)
+    format_check.pack(side="left")
     format_combo = ttk.Combobox(format_row, values=list(PAPER_FORMATS),
                                 state="disabled", width=4,
                                 textvariable=format_value)
@@ -4259,6 +4271,42 @@ def run_gui():
                                 state="disabled", width=15,
                                 textvariable=orient_value)
     orient_combo.pack(side="left", padx=(6, 0))
+
+    def sync_bulk_controls():
+        """Ручные листы/формат недоступны, если файлов больше одного.
+
+        У разных файлов могут быть разные количества листов и форматы —
+        общие настройки к ним применять нельзя.
+        """
+        multi = len(pending) > 1
+        dim = "#7A7A7A" if theme_state["dark"] else "#9A9A9A"
+        subtext = "#A8A8A8" if theme_state["dark"] else WIN11_SUBTEXT
+        danger = "#D9807A" if theme_state["dark"] else WIN11_DANGER
+        if multi:
+            if manual_var.get():
+                manual_var.set(False)
+            if format_var.get():
+                format_var.set(False)
+            spin.config(state="disabled")
+            format_combo.config(state="disabled")
+            orient_combo.config(state="disabled")
+            if hint_label is not None:
+                hint_label.config(fg=subtext)
+            hint_var.set("Для нескольких файлов ручные листы и формат "
+                         "недоступны — у каждого файла свои параметры.")
+            state, cursor = "disabled", "arrow"
+        else:
+            on_toggle()
+            on_toggle_format()
+            state, cursor = "normal", "hand2"
+            if hint_label is not None:
+                hint_label.config(fg=danger)
+        for check in (manual_check, format_check):
+            if check is not None:
+                check.config(state=state, cursor=cursor,
+                             disabledforeground=dim)
+
+    sync_bulk_controls()
 
     def style_dropdown(event):
         """Фон выпадающего списка — по текущей теме (light/dark)."""
@@ -4461,6 +4509,10 @@ def run_gui():
         set_theme(dark_var.get())
         draw_toggle()
         update_setting("theme", "dark" if theme_state["dark"] else "light")
+        try:
+            sync_bulk_controls()      # обновить цвет неактивных галочек
+        except NameError:
+            pass
 
     theme_toggle.bind("<Button-1>", toggle_theme)
     theme_label.bind("<Button-1>", toggle_theme)
