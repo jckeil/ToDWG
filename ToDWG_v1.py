@@ -4581,41 +4581,36 @@ def run_gui():
         def apply_delays_visuals(on):
             if speed_scale is None:
                 return
-            if on:
-                scale_hint.pack_forget()
-                speed_head.pack(anchor="w", padx=40, pady=(0, 2))
-                speed_scale.pack(anchor="w", padx=40)
-                names.pack(anchor="w", padx=40)
-            else:
-                # Без задержек скорость не настраивается — ползунок скрыт.
-                speed_head.pack_forget()
-                speed_scale.pack_forget()
-                names.pack_forget()
-                scale_hint.pack(anchor="w", fill="x", padx=40, pady=(6, 8))
             dark = bool(theme_state["dark"])
             dim = "#7A7A7A" if dark else "#9A9A9A"
+            trough = "#808080" if on else ("#454545" if dark else "#D9D9D9")
+            # Без задержек движок сливается с полосой — остаётся неактивная
+            # полоса без перемещаемого бегунка.
+            speed_scale.config(
+                state="normal" if on else "disabled",
+                cursor="hand2" if on else "arrow",
+                takefocus=1 if on else 0,
+                bg=("#3A3A3A" if dark else "#E5E5E5") if on else trough,
+                troughcolor=trough,
+                activebackground=(("#4A90B8" if dark else WIN11_ACCENT)
+                                  if on else trough),
+                sliderrelief="raised" if on else "flat")
+            speed_head.pack(anchor="w", padx=40, pady=(0, 2))
+            speed_scale.pack(anchor="w", padx=40)
+            names.pack(anchor="w", padx=40, pady=(0, 10 if on else 6))
             if on:
-                speed_scale.config(
-                    state="normal", cursor="hand2", takefocus=1,
-                    bg="#3A3A3A" if dark else "#E5E5E5",
-                    troughcolor="#808080",
-                    activebackground="#4A90B8" if dark else WIN11_ACCENT)
+                scale_hint.pack_forget()
                 speed_title_label.config(
                     fg="#E6E6E6" if dark else WIN11_TEXT)
                 speed_value_label.config(
                     fg="#3B7EA1" if dark else WIN11_ACCENT)
-                scale_hint.config(text="")
             else:
-                speed_scale.config(
-                    state="disabled", cursor="arrow", takefocus=0,
-                    bg="#444444" if dark else "#E3E3E3",
-                    troughcolor="#3A3A3A" if dark else "#EDEDED",
-                    activebackground="#444444" if dark else "#E3E3E3")
                 speed_title_label.config(fg=dim)
                 speed_value_label.config(fg=dim)
                 scale_hint.config(
                     text="Настройка невозможна: задержки выключены — "
                          "скорость максимальная.")
+                scale_hint.pack(anchor="w", fill="x", padx=40, pady=(0, 8))
             names_fg = ("#A8A8A8" if dark else WIN11_SUBTEXT) if on else dim
             for name_label in name_labels:
                 name_label.config(fg=names_fg)
