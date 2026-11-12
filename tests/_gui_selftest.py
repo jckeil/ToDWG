@@ -36,7 +36,7 @@ def mainloop_stub(self, n=0):
                 checks.append(text)
                 if text == "Указать количество листов вручную":
                     check = w
-                if text == "Выбрать формат листа вручную":
+                if text.startswith("Выбрать формат листа вручную"):
                     format_check = w
                 report.append(("check", text, w.cget("state")))
             elif isinstance(w, tk.Spinbox):

@@ -44,7 +44,7 @@ import time
 import traceback
 
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -4237,7 +4237,7 @@ def run_gui():
 
     format_row = tk.Frame(opts, bg=WIN11_CARD_BG)
     format_row.pack(anchor="w", pady=(10, 0))
-    make_check(format_row, "Выбрать формат листа вручную", format_var,
+    make_check(format_row, "Выбрать формат листа вручную (beta)", format_var,
                on_toggle_format).pack(side="left")
     format_combo = ttk.Combobox(format_row, values=list(PAPER_FORMATS),
                                 state="disabled", width=4,
@@ -4456,40 +4456,78 @@ def run_gui():
     draw_toggle()
 
     def open_settings():
-        """Окно настроек: скорость кликера, журнал, DXF, отчёт, мышь."""
+        """Окно настроек: задержки/скорость кликера и прочие опции."""
         win = tk.Toplevel(root)
         win.title("Настройки")
         win.resizable(False, False)
         win.configure(bg=WIN11_BG)
         apply_icon(win)
         win.transient(root)
-        _center(win, 580, 560)
-        card_s = _card(win, 520, 500)
+        _center(win, 580, 580)
+        card_s = _card(win, 520, 520)
 
         tk.Label(card_s, text="Настройки",
                  font=("Segoe UI Variable Display", 15, "bold"),
-                 bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(20, 8))
+                 bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(16, 6))
         tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
-            fill="x", padx=26, pady=(0, 12))
+            fill="x", padx=26, pady=(0, 8))
 
-        speed_value = tk.StringVar(value=speed_name())
+        def show_help(text):
+            try:
+                messagebox.showinfo("Справка", text, parent=win)
+            except Exception as e:
+                log(f"Справка: {e}")
+
+        def check_row(text, variable, command, help_text, pady=(6, 0)):
+            row = tk.Frame(card_s, bg=WIN11_CARD_BG)
+            row.pack(anchor="w", fill="x", padx=40, pady=pady)
+            make_check(row, text, variable, command).pack(side="left")
+            q = tk.Label(row, text="?", font=FONT_BODY_SM,
+                         bg=WIN11_CARD_BG, fg=WIN11_ACCENT, cursor="hand2")
+            q.pack(side="right", padx=(8, 6))
+            q.bind("<Button-1>", lambda e, t=help_text: show_help(t))
+            return row
+
+        speed_value = tk.StringVar(value=f"«{speed_name()}»")
         speed_var = tk.IntVar(value=_CLICKER["level"])
+        speed_scale = None
 
         def on_speed(value):
             level = int(round(float(value)))
             set_clicker_speed(level)
-            speed_value.set(speed_name())
+            speed_value.set(f"«{speed_name()}»")
             update_setting("speed", level)
             update_setting("speed_drop_streak", 0)
             log(f"Скорость кликера: «{speed_name()}» "
                 f"({level}/3) — выбрана вручную.")
 
+        delays_var = tk.BooleanVar(value=bool(_CLICKER["delays"]))
+
+        def sync_delays():
+            on = set_clicker_delays(delays_var.get())
+            update_setting("delays", on)
+            if speed_scale is not None:
+                speed_scale.config(state="normal" if on else "disabled")
+            log(f"Задержки кликера: "
+                f"{'включены' if on else 'отключены (скорость максимальная)'}.")
+
+        check_row("Задержки кликера (паузы между шагами)", delays_var,
+                  sync_delays,
+                  "Паузы между шагами кликера (нажатия, переходы). Включены — "
+                  "скорость задаётся ползунком ниже. Если снять — паузы почти "
+                  "убираются (×0.1), скорость максимальная; программа опирается "
+                  "на опрос состояния и повторы — быстрее, но на медленных ПК "
+                  "возможны повторы.")
+        tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
+            fill="x", padx=26, pady=(8, 4))
+
         speed_head = tk.Frame(card_s, bg=WIN11_CARD_BG)
-        speed_head.pack(anchor="w", padx=40, pady=(0, 2), fill="x")
+        speed_head.pack(anchor="w", padx=40, pady=(0, 2))
         tk.Label(speed_head, text="Скорость кликера:", font=FONT_BODY_SM,
                  bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(side="left")
         tk.Label(speed_head, textvariable=speed_value, font=FONT_BODY_SM,
-                 bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="right")
+                 bg=WIN11_CARD_BG, fg=WIN11_ACCENT).pack(side="left",
+                                                         padx=(6, 0))
         speed_scale = tk.Scale(
             card_s, from_=0, to=3, resolution=1, orient="horizontal",
             showvalue=0, length=360, width=16, sliderlength=22,
@@ -4498,23 +4536,19 @@ def run_gui():
             highlightbackground=WIN11_BORDER, bd=1,
             sliderrelief="raised", variable=speed_var, command=on_speed)
         speed_scale.pack(anchor="w", padx=40)
-        tk.Label(card_s, text="Медленно · Оптимально · Быстро · Максимально",
-                 font=FONT_VERSION, bg=WIN11_CARD_BG,
-                 fg=WIN11_SUBTEXT).pack(anchor="w", padx=44, pady=(0, 10))
+        names = tk.Frame(card_s, bg=WIN11_CARD_BG, width=360, height=16)
+        names.pack(anchor="w", padx=40, pady=(0, 10))
+        names.pack_propagate(False)
+        for text, x, anchor in (("Медленно", 0, "nw"),
+                                ("Оптимально", 120, "n"),
+                                ("Быстро", 240, "n"),
+                                ("Максимально", 360, "ne")):
+            tk.Label(names, text=text, font=FONT_VERSION,
+                     bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).place(
+                x=x, y=0, anchor=anchor)
+
         tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
-            fill="x", padx=26, pady=(0, 6))
-
-        delays_var = tk.BooleanVar(value=bool(_CLICKER["delays"]))
-
-        def delays_cmd():
-            on = set_clicker_delays(delays_var.get())
-            update_setting("delays", on)
-            log(f"Задержки кликера: "
-                f"{'включены' if on else 'отключены (режим опроса)'}.")
-
-        make_check(card_s, "Задержки кликера (паузы между шагами)",
-                   delays_var, delays_cmd).pack(
-            anchor="w", padx=40, pady=(6, 0))
+            fill="x", padx=26, pady=(2, 4))
 
         def save_log_cmd():
             update_setting("save_log", save_log_var.get())
@@ -4528,21 +4562,29 @@ def run_gui():
         def block_mouse_cmd():
             update_setting("block_mouse", mouse_block_var.get())
 
-        make_check(card_s, "Сохранять журнал конвертирования",
-                   save_log_var, save_log_cmd).pack(
-            anchor="w", padx=40, pady=(2, 0))
-        make_check(card_s, "Удалять .dxf файлы после конвертации",
-                   delete_var, delete_cmd).pack(
-            anchor="w", padx=40, pady=(6, 0))
-        make_check(card_s, "Выводить отчёт по завершении",
-                   report_var, report_cmd).pack(
-            anchor="w", padx=40, pady=(6, 0))
-        make_check(card_s, "Блокировать мышь во время конвертации",
-                   mouse_block_var, block_mouse_cmd).pack(
-            anchor="w", padx=40, pady=(6, 0))
+        check_row("Сохранять журнал конвертирования", save_log_var,
+                  save_log_cmd,
+                  "Рядом с итоговым .dwg создаются ToDWG.log, result.json и "
+                  "placed.json (служебные файлы). По умолчанию выключено — "
+                  "рядом с DWG остаётся только итоговый файл.", pady=(2, 0))
+        check_row("Удалять .dxf файлы после конвертации", delete_var,
+                  delete_cmd,
+                  "Промежуточные DXF листов удаляются после успешной сборки "
+                  "альбома. По умолчанию включено — в папке остаётся только "
+                  "итоговый .dwg.")
+        check_row("Выводить отчёт по завершении", report_var, report_cmd,
+                  "После конвертации показывается окно с итогами. Если снять — "
+                  "отчёт не открывается, происходит возврат в главное окно.")
+        check_row("Блокировать мышь во время конвертации", mouse_block_var,
+                  block_mouse_cmd,
+                  "На время работы мышь не действует (клавиатура активна). "
+                  "Аварийный останов Ctrl+Alt+0 снимает блокировку. По "
+                  "умолчанию включено.")
+
+        speed_scale.config(state="normal" if delays_var.get() else "disabled")
 
         btns = tk.Frame(card_s, bg=WIN11_CARD_BG)
-        btns.pack(side="bottom", pady=(14, 24))
+        btns.pack(side="bottom", pady=(10, 14))
         _button(btns, "Закрыть", win.destroy).pack()
 
         apply_theme_tree(win, theme_state["dark"])
