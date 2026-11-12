@@ -4491,6 +4491,7 @@ def run_gui():
         speed_value = tk.StringVar(value=f"«{speed_name()}»")
         speed_var = tk.IntVar(value=_CLICKER["level"])
         speed_scale = None
+        name_labels = []
 
         def on_speed(value):
             level = int(round(float(value)))
@@ -4506,8 +4507,7 @@ def run_gui():
         def sync_delays():
             on = set_clicker_delays(delays_var.get())
             update_setting("delays", on)
-            if speed_scale is not None:
-                speed_scale.config(state="normal" if on else "disabled")
+            apply_delays_visuals(on)
             log(f"Задержки кликера: "
                 f"{'включены' if on else 'отключены (скорость максимальная)'}.")
 
@@ -4525,9 +4525,10 @@ def run_gui():
         speed_head.pack(anchor="w", padx=40, pady=(0, 2))
         tk.Label(speed_head, text="Скорость кликера:", font=FONT_BODY_SM,
                  bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(side="left")
-        tk.Label(speed_head, textvariable=speed_value, font=FONT_BODY_SM,
-                 bg=WIN11_CARD_BG, fg=WIN11_ACCENT).pack(side="left",
-                                                         padx=(6, 0))
+        speed_value_label = tk.Label(speed_head, textvariable=speed_value,
+                                     font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+                                     fg=WIN11_ACCENT)
+        speed_value_label.pack(side="left", padx=(6, 0))
         speed_scale = tk.Scale(
             card_s, from_=0, to=3, resolution=1, orient="horizontal",
             showvalue=0, length=360, width=16, sliderlength=22,
@@ -4536,16 +4537,58 @@ def run_gui():
             highlightbackground=WIN11_BORDER, bd=1,
             sliderrelief="raised", variable=speed_var, command=on_speed)
         speed_scale.pack(anchor="w", padx=40)
+
+        def block_scale_when_off(event):
+            return "break" if not delays_var.get() else None
+
+        for _seq in ("<Button-1>", "<B1-Motion>", "<ButtonRelease-1>",
+                     "<MouseWheel>", "<KeyPress>"):
+            speed_scale.bind(_seq, block_scale_when_off)
+
         names = tk.Frame(card_s, bg=WIN11_CARD_BG, width=360, height=16)
-        names.pack(anchor="w", padx=40, pady=(0, 10))
+        names.pack(anchor="w", padx=40)
         names.pack_propagate(False)
         for text, x, anchor in (("Медленно", 0, "nw"),
                                 ("Оптимально", 120, "n"),
                                 ("Быстро", 240, "n"),
                                 ("Максимально", 360, "ne")):
-            tk.Label(names, text=text, font=FONT_VERSION,
-                     bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).place(
-                x=x, y=0, anchor=anchor)
+            name_label = tk.Label(names, text=text, font=FONT_VERSION,
+                                  bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT)
+            name_label.place(x=x, y=0, anchor=anchor)
+            name_labels.append(name_label)
+
+        scale_hint = tk.Label(card_s, text="", font=FONT_VERSION,
+                              bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT,
+                              anchor="w", justify="left")
+        scale_hint.pack(anchor="w", fill="x", padx=40, pady=(2, 8))
+
+        def apply_delays_visuals(on):
+            if speed_scale is None:
+                return
+            dark = bool(theme_state["dark"])
+            if on:
+                speed_scale.config(
+                    state="normal", cursor="hand2",
+                    bg="#3A3A3A" if dark else "#E5E5E5",
+                    troughcolor="#808080",
+                    activebackground="#4A90B8" if dark else WIN11_ACCENT)
+                speed_value_label.config(fg=WIN11_ACCENT)
+                scale_hint.config(text="")
+            else:
+                speed_scale.config(
+                    state="disabled", cursor="arrow",
+                    bg="#4A4A4A" if dark else "#CFCFCF",
+                    troughcolor="#5F5F5F" if dark else "#B4B4B4",
+                    activebackground="#4A4A4A" if dark else "#CFCFCF")
+                speed_value_label.config(
+                    fg="#6E6E6E" if dark else "#9A9A9A")
+                scale_hint.config(
+                    text="Ползунок недоступен: задержки выключены — "
+                         "скорость максимальная.")
+            for name_label in name_labels:
+                name_label.config(
+                    fg=WIN11_SUBTEXT if on else
+                    ("#6E6E6E" if dark else "#9A9A9A"))
 
         tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
             fill="x", padx=26, pady=(2, 4))
@@ -4581,13 +4624,12 @@ def run_gui():
                   "Аварийный останов Ctrl+Alt+0 снимает блокировку. По "
                   "умолчанию включено.")
 
-        speed_scale.config(state="normal" if delays_var.get() else "disabled")
-
         btns = tk.Frame(card_s, bg=WIN11_CARD_BG)
         btns.pack(side="bottom", pady=(10, 14))
         _button(btns, "Закрыть", win.destroy).pack()
 
         apply_theme_tree(win, theme_state["dark"])
+        apply_delays_visuals(bool(delays_var.get()))
         win.focus_force()
 
     tk.Button(card, text="Настройки", command=open_settings,
