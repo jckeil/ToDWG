@@ -3748,7 +3748,7 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     if len(produced) < sheet_count:
         notes.append(f"Сохранено {len(produced)} из {sheet_count} листов.")
     if placed < len(produced):
-        notes.append(f"В альбом вошло {placed} схем из {len(produced)}.")
+        notes.append(f"В альбом вошло {placed} из {len(produced)} листов.")
     if target.lower().endswith(".dxf"):
         notes.append("DWG не создан (нет ODA File Converter / AutoCAD) — "
                      "оставлен DXF.")
@@ -3827,8 +3827,8 @@ def run_headless(opts):
     if error_files:
         notes.append("Не прочитаны DXF: " + ", ".join(error_files) + ".")
     if len(merge["placed"]) < len(files):
-        notes.append(f"В альбом вошло {len(merge['placed'])} схем "
-                     f"из {len(files)} файлов.")
+        notes.append(f"В альбом вошло {len(merge['placed'])} "
+                     f"из {len(files)} листов.")
 
     stats = {
         "source": files[0],
@@ -4875,10 +4875,9 @@ def run_gui():
         cell(0, 0, "Листов:",
              f"{stats.get('sheet_count', 0)} ({count_src})",
              WIN11_ACCENT if manual else WIN11_TEXT)
-        cell(0, 2, "Схем:", str(stats.get("placed", 0)))
-        cell(1, 0, "Экспорт:", format_duration(stats.get("conv_time", 0.0)))
-        cell(1, 2, "Сборка:", format_duration(stats.get("merge_time", 0.0)))
-        cell(2, 0, "Ошибок:", str(stats.get("errors", 0)),
+        cell(0, 2, "Экспорт:", format_duration(stats.get("conv_time", 0.0)))
+        cell(1, 0, "Сборка:", format_duration(stats.get("merge_time", 0.0)))
+        cell(1, 2, "Ошибок:", str(stats.get("errors", 0)),
              WIN11_DANGER if stats.get("errors") else WIN11_TEXT)
 
         tk.Label(card_s, text="Результат:", font=FONT_BODY_SM,
@@ -4930,7 +4929,6 @@ def run_gui():
         ok_count = len(ok_items)
         fail_count = len(results) - ok_count
         total_sheets = sum(int(r.get("sheet_count") or 0) for r in ok_items)
-        total_placed = sum(int(r.get("placed") or 0) for r in ok_items)
         total_errors = sum(int(r.get("errors") or 0) for r in ok_items)
 
         tk.Label(card_b, text=f"ГОТОВО: {ok_count} из {len(results)}",
@@ -4939,8 +4937,7 @@ def run_gui():
                  fg=WIN11_OK if not fail_count else WIN11_DANGER).pack(
             pady=(14, 0))
         tk.Label(card_b,
-                 text=(f"листов {total_sheets} · схем {total_placed} · "
-                       f"ошибок {total_errors}"),
+                 text=(f"листов {total_sheets} · ошибок {total_errors}"),
                  font=FONT_BODY_SM, bg=WIN11_CARD_BG,
                  fg=WIN11_SUBTEXT).pack(pady=(0, 6))
         tk.Frame(card_b, bg=WIN11_BORDER, height=1).pack(fill="x", padx=24,
@@ -5003,7 +5000,6 @@ def run_gui():
                              else "автоматически")
                 tk.Label(row,
                          text=(f"листов {item.get('sheet_count')} ({src_label})"
-                               f" · схем {item.get('placed')}"
                                f" · ошибок {item.get('errors')}"),
                          font=FONT_BODY_SM, bg=WIN11_CARD_BG,
                          fg=WIN11_SUBTEXT, anchor="w").pack(anchor="w")
