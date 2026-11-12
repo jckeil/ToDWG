@@ -526,8 +526,9 @@ PAGE_TURN_PAUSE = 1.0         # после Page Down (следующий лис�
 # Скорость кликера: 4 шага. Коэффициент умножается на паузы (pause/short_sleep).
 # 0 — самая осторожная скорость (текущее поведение); дальше — быстрее.
 SPEED_LEVELS = ("Медленно", "Оптимально", "Быстро", "Максимально")
-SPEED_SCALES = (1.0, 0.8, 0.6, 0.45)
-_CLICKER = {"level": 0, "scale": SPEED_SCALES[0]}
+SPEED_SCALES = (1.15, 1.0, 0.6, 0.3)
+_CLICKER = {"level": 1, "scale": SPEED_SCALES[1],
+            "delays": True, "delay_factor": 1.0}
 
 
 def set_clicker_speed(level):
@@ -540,6 +541,13 @@ def set_clicker_speed(level):
     _CLICKER["level"] = level
     _CLICKER["scale"] = SPEED_SCALES[level]
     return level
+
+
+def set_clicker_delays(enabled):
+    """Включает/выключает паузы. Выключено — режим опроса (паузы ×0.1)."""
+    _CLICKER["delays"] = bool(enabled)
+    _CLICKER["delay_factor"] = 1.0 if _CLICKER["delays"] else 0.1
+    return _CLICKER["delays"]
 
 
 def speed_name(level=None):
@@ -604,8 +612,8 @@ def check_stop():
 
 
 def pause(seconds):
-    """Пауза (масштабируется скоростью кликера), прерывается остановкой."""
-    seconds = seconds * _CLICKER["scale"]
+    """Пауза (масштабируется скоростью и режимом задержек)."""
+    seconds = seconds * _CLICKER["scale"] * _CLICKER["delay_factor"]
     end = time.time() + seconds
     while time.time() < end:
         check_stop()
@@ -614,7 +622,7 @@ def pause(seconds):
 
 def short_sleep(seconds):
     """Короткая пауза в циклах ожидания: реагирует на остановку мгновенно."""
-    seconds = seconds * _CLICKER["scale"]
+    seconds = seconds * _CLICKER["scale"] * _CLICKER["delay_factor"]
     end = time.time() + seconds
     while time.time() < end:
         check_stop()
@@ -2578,7 +2586,9 @@ def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None)
     sheet_drops = {}
 
     log(f"Скорость кликера на старте: «{speed_name()}» "
-        f"({_CLICKER['level']}/3, коэффициент пауз {_CLICKER['scale']}).")
+        f"({_CLICKER['level']}/3, паузы ×"
+        f"{_CLICKER['scale'] * _CLICKER['delay_factor']:.2f}; задержки "
+        f"{'вкл' if _CLICKER['delays'] else 'ВЫКЛ — режим опроса'}).")
 
     sheet_num = 1
     while sheet_num <= sheet_count:
@@ -3886,9 +3896,10 @@ def run_gui():
     report_var = tk.BooleanVar(value=bool(ui_settings.get("show_report", True)))
     mouse_block_var = tk.BooleanVar(value=bool(ui_settings.get("block_mouse", True)))
     try:
-        set_clicker_speed(int(ui_settings.get("speed", 0) or 0))
+        set_clicker_speed(int(ui_settings.get("speed", 1)))
     except Exception:
-        set_clicker_speed(0)
+        set_clicker_speed(1)
+    set_clicker_delays(bool(ui_settings.get("delays", True)))
     dark_default = str(ui_settings.get("theme", "dark")) != "light"
     format_var = tk.BooleanVar(value=False)  # выбрать формат листа вручную
     format_value = tk.StringVar(value="A3")  # формат при ручном выборе
@@ -4481,16 +4492,29 @@ def run_gui():
                  bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="right")
         speed_scale = tk.Scale(
             card_s, from_=0, to=3, resolution=1, orient="horizontal",
-            showvalue=0, length=340, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
-            troughcolor="#8A8A8A", activebackground=WIN11_ACCENT,
-            highlightthickness=0, bd=0, sliderrelief="flat",
-            variable=speed_var, command=on_speed)
+            showvalue=0, length=360, width=16, sliderlength=22,
+            bg="#E5E5E5", fg=WIN11_TEXT, troughcolor="#808080",
+            activebackground=WIN11_ACCENT, highlightthickness=1,
+            highlightbackground=WIN11_BORDER, bd=1,
+            sliderrelief="raised", variable=speed_var, command=on_speed)
         speed_scale.pack(anchor="w", padx=40)
         tk.Label(card_s, text="Медленно · Оптимально · Быстро · Максимально",
                  font=FONT_VERSION, bg=WIN11_CARD_BG,
                  fg=WIN11_SUBTEXT).pack(anchor="w", padx=44, pady=(0, 10))
         tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
             fill="x", padx=26, pady=(0, 6))
+
+        delays_var = tk.BooleanVar(value=bool(_CLICKER["delays"]))
+
+        def delays_cmd():
+            on = set_clicker_delays(delays_var.get())
+            update_setting("delays", on)
+            log(f"Задержки кликера: "
+                f"{'включены' if on else 'отключены (режим опроса)'}.")
+
+        make_check(card_s, "Задержки кликера (паузы между шагами)",
+                   delays_var, delays_cmd).pack(
+            anchor="w", padx=40, pady=(6, 0))
 
         def save_log_cmd():
             update_setting("save_log", save_log_var.get())
