@@ -720,18 +720,29 @@ def start_stop_hotkey():
     threading.Thread(target=loop, name="stop-hotkey", daemon=True).start()
 
 
-# --- Блокировка МЫШИ на время конвертации ------------------------------------
-# Блокируем только мышь (WH_MOUSE_LL). Клавиатуру НЕ трогаем: аварийная
-# остановка Ctrl+Alt+0 (RegisterHotKey + keyboard) должна срабатывать всегда.
+# --- Блокировка НАЖАТИЙ мыши на время конвертации ----------------------------
+# Блокируем только нажатия/отпускания кнопок мыши (WH_MOUSE_LL). Движение и
+# колесо проходят: кликер работает сообщениями (WM_NCLBUTTONDOWN/UP, BM_CLICK,
+# WM_COMMAND), клавиши — SendInput, поэтому курсор на процесс не влияет.
+# Клавиатуру НЕ трогаем: аварийная остановка Ctrl+Alt+0 должна работать всегда.
 _WH_MOUSE_LL = 14
 _WM_QUIT = 0x0012
 _MOUSE_BLOCK = {"enabled": False, "thread": None, "thread_id": 0, "hook": 0}
+# WM_LBUTTONDOWN/UP, WM_RBUTTONDOWN/UP, WM_MBUTTONDOWN/UP,
+# WM_XBUTTONDOWN/UP. WM_MOUSEMOVE и WM_MOUSEWHEEL не блокируются.
+_MOUSE_BLOCK_MSGS = frozenset((
+    0x0201, 0x0202,   # левая кнопка
+    0x0204, 0x0205,   # правая кнопка
+    0x0207, 0x0208,   # средняя кнопка
+    0x020B, 0x020C,   # боковые кнопки
+))
 
 
 def _mouse_block_proc(n_code, w_param, l_param):
     try:
         if n_code == 0 and _MOUSE_BLOCK["enabled"]:
-            return 1                     # проглотить событие мыши
+            if int(w_param) in _MOUSE_BLOCK_MSGS:
+                return 1         # проглотить нажатие/отпускание кнопки
     except Exception:
         pass
     try:
@@ -774,8 +785,8 @@ def _mouse_block_loop():
         _MOUSE_BLOCK["thread_id"] = 0
         return
     _MOUSE_BLOCK["hook"] = hook
-    log("Мышь заблокирована на время конвертации "
-        "(клавиатура активна; остановка — Ctrl+Alt+0).")
+    log("Нажатия кнопок мыши заблокированы (движение свободно; "
+        "клавиатура активна; остановка — Ctrl+Alt+0).")
     try:
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
             pass
@@ -789,11 +800,11 @@ def _mouse_block_loop():
         _MOUSE_BLOCK["hook"] = 0
         _MOUSE_BLOCK["thread_id"] = 0
         _MOUSE_BLOCK["thread"] = None
-        log("Блокировка мыши снята.")
+        log("Блокировка нажатий мыши снята.")
 
 
 def start_mouse_block(enable=True):
-    """Включает блокировку мыши (клавиатура не блокируется)."""
+    """Включает блокировку нажатий кнопок мыши (движение свободно)."""
     thread = _MOUSE_BLOCK["thread"]
     if thread is not None and thread.is_alive():
         _MOUSE_BLOCK["enabled"] = enable
@@ -4631,10 +4642,11 @@ def run_gui():
         check_row("Выводить отчёт по завершении", dlg_report, None,
                   "После конвертации показывается окно с итогами. Если снять — "
                   "отчёт не открывается, происходит возврат в главное окно.")
-        check_row("Блокировать мышь во время конвертации", dlg_block_mouse, None,
-                  "На время работы мышь не действует (клавиатура активна). "
-                  "Аварийный останов Ctrl+Alt+0 снимает блокировку. По "
-                  "умолчанию включено.")
+        check_row("Блокировать нажатия мыши во время конвертации",
+                  dlg_block_mouse, None,
+                  "Нажатия кнопок мыши не действуют (курсор двигается "
+                  "свободно, клавиатура активна). Аварийный останов "
+                  "Ctrl+Alt+0 снимает блокировку. По умолчанию включено.")
 
         def close_settings():
             settings_win["win"] = None
