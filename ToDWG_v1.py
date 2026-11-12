@@ -70,7 +70,7 @@ from ezdxf.xref import ConflictPolicy
 # =============================================================================
 
 APP_NAME = "ToDWG"
-APP_VERSION = "v1.6"
+APP_VERSION = "v1.7"
 APP_FULL_TITLE = f"{APP_NAME} {APP_VERSION} — Schemagee → DXF → DWG"
 APP_INNER_TEXT = "Schemagee → DXF → DWG"
 APP_USER_MODEL_ID = "ToDWG.App.V1"
@@ -523,6 +523,30 @@ SHEET_RETRY_PAUSE = 0.8       # между попытками одного ли�
 SHEET_NEXT_PAUSE = 0.3        # перед Page Down
 PAGE_TURN_PAUSE = 1.0         # после Page Down (следующий лист)
 
+# Скорость кликера: 4 шага. Коэффициент умножается на паузы (pause/short_sleep).
+# 0 — самая осторожная скорость (текущее поведение); дальше — быстрее.
+SPEED_LEVELS = ("Медленно", "Оптимально", "Быстро", "Максимально")
+SPEED_SCALES = (1.0, 0.8, 0.6, 0.45)
+_CLICKER = {"level": 0, "scale": SPEED_SCALES[0]}
+
+
+def set_clicker_speed(level):
+    """Задаёт скорость кликера 0..3 (0 — самая осторожная). Возвращает уровень."""
+    try:
+        level = int(level)
+    except Exception:
+        level = 0
+    level = max(0, min(len(SPEED_LEVELS) - 1, level))
+    _CLICKER["level"] = level
+    _CLICKER["scale"] = SPEED_SCALES[level]
+    return level
+
+
+def speed_name(level=None):
+    lvl = _CLICKER["level"] if level is None else int(level)
+    lvl = max(0, min(len(SPEED_LEVELS) - 1, lvl))
+    return SPEED_LEVELS[lvl]
+
 # Названия кнопки, запускающей конвертацию в форме Schemagee «Экспорт в DXF».
 # Диалог «Сохранение» только запоминает путь — сам экспорт начинается
 # отдельной кнопкой (в старом кликере её нажимали Tab+Enter).
@@ -580,7 +604,8 @@ def check_stop():
 
 
 def pause(seconds):
-    """Пауза, которая прерывается экстренной остановкой."""
+    """Пауза (масштабируется скоростью кликера), прерывается остановкой."""
+    seconds = seconds * _CLICKER["scale"]
     end = time.time() + seconds
     while time.time() < end:
         check_stop()
@@ -589,6 +614,7 @@ def pause(seconds):
 
 def short_sleep(seconds):
     """Короткая пауза в циклах ожидания: реагирует на остановку мгновенно."""
+    seconds = seconds * _CLICKER["scale"]
     end = time.time() + seconds
     while time.time() < end:
         check_stop()
@@ -2088,7 +2114,7 @@ def read_sheet_count_from_print_dialog():
     for _ in range(PRINT_DIALOG_TAB_COUNT):
         check_stop()
         send_keys('tab')
-        time.sleep(TAB_SETTLE)
+        pause(TAB_SETTLE)
     pause(0.3)
 
     send_keys('ctrl+a')
@@ -2549,8 +2575,13 @@ def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None)
     produced = []
     missing = []
     recoveries = 0
+    sheet_drops = {}
 
-    for sheet_num in range(1, sheet_count + 1):
+    log(f"Скорость кликера на старте: «{speed_name()}» "
+        f"({_CLICKER['level']}/3, коэффициент пауз {_CLICKER['scale']}).")
+
+    sheet_num = 1
+    while sheet_num <= sheet_count:
         check_stop()
         sheet_start = time.time()
         log(f"--- Лист {sheet_num} из {sheet_count} ---")
@@ -2572,7 +2603,8 @@ def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None)
         ok = False
         for attempt in range(1, SHEET_ATTEMPTS + 1):
             check_stop()
-            log(f"  Попытка {attempt}/{SHEET_ATTEMPTS}.")
+            log(f"  Попытка {attempt}/{SHEET_ATTEMPTS} "
+                f"(скорость: «{speed_name()}»).")
             # Schemagee мог не получить команду и зависнуть: не ждём
             # бесконечно — перезапускаем его и повторяем лист.
             if schemagee_hung(hwnd):
@@ -2609,10 +2641,42 @@ def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None)
 
         if ok:
             produced.append(out_path)
+            streak = int(load_settings().get("speed_drop_streak", 0) or 0)
+            if sheet_drops.get(sheet_num):
+                streak += 1
+                update_setting("speed_drop_streak", streak)
+                log(f"  Снижение скорости помогло: лист {sheet_num} сохранён на "
+                    f"«{speed_name()}» (подряд успешных снижений: {streak}/3).")
+                if streak >= 3:
+                    saved = int(load_settings().get("speed", 0) or 0)
+                    new_saved = max(0, saved - 1)
+                    update_setting("speed", new_saved)
+                    update_setting("speed_drop_streak", 0)
+                    log(f"  СКОРОСТЬ ЗАФИКСИРОВАНА на шаг ниже: "
+                        f"«{speed_name(new_saved)}» (было «{speed_name(saved)}»); "
+                        f"счётчик подряд сброшен.")
+            elif streak:
+                update_setting("speed_drop_streak", 0)
+                log("  Лист сохранён без снижения — счётчик подряд сброшен.")
+        elif _CLICKER["level"] > 0:
+            old_level = _CLICKER["level"]
+            new_level = set_clicker_speed(old_level - 1)
+            sheet_drops[sheet_num] = sheet_drops.get(sheet_num, 0) + 1
+            total = int(load_settings().get("speed_drops_total", 0) or 0) + 1
+            update_setting("speed_drops_total", total)
+            log(f"  СНИЖЕНИЕ СКОРОСТИ: лист {sheet_num} не сохранён за "
+                f"{SHEET_ATTEMPTS} попытки на «{speed_name(old_level)}» — "
+                f"переключаемся на «{speed_name(new_level)}» и повторяем лист "
+                f"(всего снижений из-за ошибок: {total}).")
+            continue
         else:
             missing.append(sheet_num)
             log(f"  ОШИБКА: лист {sheet_num} не сохранён "
-                f"за {SHEET_ATTEMPTS} попытки.")
+                f"за {SHEET_ATTEMPTS} попытки даже на «{speed_name()}».")
+            streak = int(load_settings().get("speed_drop_streak", 0) or 0)
+            if streak:
+                update_setting("speed_drop_streak", 0)
+                log("  Неустранённая ошибка — счётчик подряд сброшен.")
 
         # Страховка: если модальное окно Schemagee ещё висит — закрываем его.
         hwnd, _ = wait_schemagee_window(timeout=3.0)
@@ -2632,6 +2696,7 @@ def algorithm_conversion(original_file_path, sheet_count, out_folder, emit=None)
 
         log(f"  Лист обработан за "
             f"{format_time(time.time() - sheet_start)} сек.")
+        sheet_num += 1
 
     return produced, missing
 
@@ -3820,6 +3885,10 @@ def run_gui():
     delete_var = tk.BooleanVar(value=bool(ui_settings.get("delete_dxf", True)))
     report_var = tk.BooleanVar(value=bool(ui_settings.get("show_report", True)))
     mouse_block_var = tk.BooleanVar(value=bool(ui_settings.get("block_mouse", True)))
+    try:
+        set_clicker_speed(int(ui_settings.get("speed", 0) or 0))
+    except Exception:
+        set_clicker_speed(0)
     dark_default = str(ui_settings.get("theme", "dark")) != "light"
     format_var = tk.BooleanVar(value=False)  # выбрать формат листа вручную
     format_value = tk.StringVar(value="A3")  # формат при ручном выборе
@@ -4376,21 +4445,52 @@ def run_gui():
     draw_toggle()
 
     def open_settings():
-        """Окно параметров: журнал, удаление DXF, отчёт по завершении."""
+        """Окно настроек: скорость кликера, журнал, DXF, отчёт, мышь."""
         win = tk.Toplevel(root)
-        win.title("Параметры")
+        win.title("Настройки")
         win.resizable(False, False)
         win.configure(bg=WIN11_BG)
         apply_icon(win)
         win.transient(root)
-        _center(win, 560, 440)
-        card_s = _card(win, 500, 380)
+        _center(win, 580, 560)
+        card_s = _card(win, 520, 500)
 
-        tk.Label(card_s, text="Параметры",
+        tk.Label(card_s, text="Настройки",
                  font=("Segoe UI Variable Display", 15, "bold"),
                  bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(pady=(20, 8))
         tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
             fill="x", padx=26, pady=(0, 12))
+
+        speed_value = tk.StringVar(value=speed_name())
+        speed_var = tk.IntVar(value=_CLICKER["level"])
+
+        def on_speed(value):
+            level = int(round(float(value)))
+            set_clicker_speed(level)
+            speed_value.set(speed_name())
+            update_setting("speed", level)
+            update_setting("speed_drop_streak", 0)
+            log(f"Скорость кликера: «{speed_name()}» "
+                f"({level}/3) — выбрана вручную.")
+
+        speed_head = tk.Frame(card_s, bg=WIN11_CARD_BG)
+        speed_head.pack(anchor="w", padx=40, pady=(0, 2), fill="x")
+        tk.Label(speed_head, text="Скорость кликера:", font=FONT_BODY_SM,
+                 bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(side="left")
+        tk.Label(speed_head, textvariable=speed_value, font=FONT_BODY_SM,
+                 bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="right")
+        speed_scale = tk.Scale(
+            card_s, from_=0, to=3, resolution=1, orient="horizontal",
+            showvalue=0, length=340, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
+            troughcolor="#8A8A8A", activebackground=WIN11_ACCENT,
+            highlightthickness=0, bd=0, sliderrelief="flat",
+            variable=speed_var, command=on_speed)
+        speed_scale.pack(anchor="w", padx=40)
+        tk.Label(card_s, text="Медленно · Оптимально · Быстро · Максимально",
+                 font=FONT_VERSION, bg=WIN11_CARD_BG,
+                 fg=WIN11_SUBTEXT).pack(anchor="w", padx=44, pady=(0, 10))
+        tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
+            fill="x", padx=26, pady=(0, 6))
 
         def save_log_cmd():
             update_setting("save_log", save_log_var.get())
@@ -4424,7 +4524,7 @@ def run_gui():
         apply_theme_tree(win, theme_state["dark"])
         win.focus_force()
 
-    tk.Button(card, text="Параметры", command=open_settings,
+    tk.Button(card, text="Настройки", command=open_settings,
               font=FONT_BODY_SM, bg="#E5E5E5", fg=WIN11_TEXT,
               activebackground="#D6D6D6", activeforeground=WIN11_TEXT,
               relief="flat", bd=0, highlightthickness=0, cursor="hand2",
