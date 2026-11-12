@@ -1,4 +1,4 @@
-# ToDWG v1.7 — Schemagee → DXF → DWG
+# ToDWG v1.8 — Schemagee → DXF → DWG
 
 Автоматизирует штатный экспорт листов из Schemagee 3.5 (`.sdd`) в DXF и
 собирает из них один альбом DWG: схемы в пространстве модели в ряд и по
@@ -24,7 +24,7 @@ ToDWG\
 ├─ CHANGELOG.md             история изменений по версиям
 ├─ ROADMAP.md               планы и идеи
 ├─ input\                   26 DXF (результат экспорта) — данные для тестов
-├─ dist\                    собранный ToDWG_v1.7.exe (локально, не в git)
+├─ dist\                    собранный ToDWG_v1.8.exe (локально, не в git)
 └─ tests\                   локальные проверки (не входят в exe)
 ```
 
@@ -92,7 +92,7 @@ python ToDWG_v1.py --headless --dxf-folder input --name check
 python -m PyInstaller ToDWG_v1.spec --clean --noconfirm
 ```
 
-Результат: `dist\ToDWG_v1.7.exe` (onefile, ~30 МБ). Папка `build\`
+Результат: `dist\ToDWG_v1.8.exe` (onefile, ~30 МБ). Папка `build\`
 пересоздаётся и в репозиторий не входит.
 
 ## Тесты
