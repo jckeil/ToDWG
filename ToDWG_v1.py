@@ -804,20 +804,125 @@ def stop_mouse_block():
 
 _RAW_SEND = keyboard.send
 
+# --- Отправка клавиш виртуальными кодами (не зависит от раскладки) ----------
+_VK_SEND = {
+    "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10,
+    "windows": 0x5B, "win": 0x5B,
+    "enter": 0x0D, "return": 0x0D, "tab": 0x09, "esc": 0x1B, "escape": 0x1B,
+    "space": 0x20, "backspace": 0x08, "delete": 0x2E, "del": 0x2E,
+    "insert": 0x2D, "ins": 0x2D, "home": 0x24, "end": 0x23,
+    "page up": 0x21, "pageup": 0x21, "page down": 0x22, "pagedown": 0x22,
+    "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
+}
+for _n in range(1, 13):
+    _VK_SEND["f%d" % _n] = 0x6F + _n
+_VK_EXTENDED = {0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E}
+
+
+def _vk_code(token):
+    token = token.strip().lower()
+    if token in _VK_SEND:
+        return _VK_SEND[token]
+    if len(token) == 1:
+        ch = token.upper()
+        if "A" <= ch <= "Z":
+            return ord(ch)
+        if "0" <= token <= "9":
+            return 0x30 + int(token)
+    return None
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [("wVk", ctypes.c_ushort),
+                ("wScan", ctypes.c_ushort),
+                ("dwFlags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.c_void_p)]
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long),
+                ("mouseData", ctypes.c_ulong),
+                ("dwFlags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.c_void_p)]
+
+
+class _HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [("uMsg", ctypes.c_ulong),
+                ("wParamL", ctypes.c_ushort),
+                ("wParamH", ctypes.c_ushort)]
+
+
+class _INPUTUNION(ctypes.Union):
+    _fields_ = [("ki", _KEYBDINPUT), ("mi", _MOUSEINPUT), ("hi", _HARDWAREINPUT)]
+
+
+class _INPUT(ctypes.Structure):
+    _anonymous_ = ("u",)
+    _fields_ = [("type", ctypes.c_ulong), ("u", _INPUTUNION)]
+
+
+def _key_input(vk, up):
+    flags = 0x0002 if up else 0        # KEYEVENTF_KEYUP
+    if vk in _VK_EXTENDED:
+        flags |= 0x0001                # KEYEVENTF_EXTENDEDKEY
+    event = _INPUT(type=1)             # INPUT_KEYBOARD
+    event.ki = _KEYBDINPUT(wVk=vk, wScan=0, dwFlags=flags,
+                           time=0, dwExtraInfo=None)
+    return event
+
+
+def _send_vk(keys):
+    """Отправляет сочетание через SendInput по VK-кодам. False — не смогли."""
+    tokens = [t for t in str(keys).split("+") if t.strip()]
+    vks = []
+    for token in tokens:
+        vk = _vk_code(token)
+        if vk is None:
+            return False
+        vks.append(vk)
+    if not vks:
+        return False
+    events = []
+    # Снимаем возможные «залипшие» модификаторы (как раньше keyboard.release).
+    for mod in (0x11, 0x12, 0x10, 0x5B, 0x5C):
+        events.append(_key_input(mod, True))
+    for vk in vks:
+        events.append(_key_input(vk, False))
+    for vk in reversed(vks):
+        events.append(_key_input(vk, True))
+    user32 = ctypes.windll.user32
+    user32.SendInput.restype = ctypes.c_uint
+    user32.SendInput.argtypes = [ctypes.c_uint, ctypes.POINTER(_INPUT),
+                                 ctypes.c_int]
+    block = (_INPUT * len(events))(*events)
+    sent = user32.SendInput(len(events), block, ctypes.sizeof(_INPUT))
+    return sent == len(events)
+
 
 def send_keys(keys):
-    """Отправляет сочетание, предварительно отпустив залипшие модификаторы.
+    """Отправляет сочетание по виртуальным кодам — раскладка не важна.
 
-    Если предыдущая команда прервалась (например, окно было занято), Ctrl/Alt/
-    Shift могли остаться «нажатыми» — тогда следующие нажатия превращаются в
-    чужие горячие клавиши. Перед отправкой всегда отпускаем их.
+    Раньше использовался keyboard.send (скан-коды): при русской раскладке
+    Ctrl+P/Shift+D не доходили до Schemagee. Виртуальные коды (VK_CONTROL,
+    VK_P, ...) от раскладки не зависят.
     """
+    try:
+        if _send_vk(keys):
+            return
+    except Exception as e:
+        log(f"SendInput не сработал ({keys}): {e}")
+    # Резерв — библиотека keyboard.
     for mod in ("ctrl", "alt", "shift", "windows"):
         try:
             keyboard.release(mod)
         except Exception:
             pass
-    _RAW_SEND(keys)
+    try:
+        _RAW_SEND(keys)
+    except Exception as e:
+        log(f"keyboard.send не сработал ({keys}): {e}")
 
 
 def _is_alive(hwnd):
@@ -1190,9 +1295,6 @@ def send_hotkey_until(hwnd, keys, finder, what="диалог", attempts=3,
     for attempt in range(1, attempts + 1):
         check_stop()
         ensure_schemagee_active(hwnd, what="Schemagee")
-        # keyboard.send шлёт скан-коды: на русской раскладке Ctrl+P/Shift+D
-        # могут не сработать. Перед каждой командой гарантируем английскую.
-        switch_to_english(hwnd)
         log(f"  Отправляем {keys} (попытка {attempt}/{attempts}); "
             f"фокус: {focus_description(hwnd)}")
         send_keys(keys)
@@ -2046,30 +2148,21 @@ def read_sheet_count_from_sdd(path):
 
 
 def switch_to_english(hwnd=None):
-    """Английская раскладка у окна Schemagee — иначе Ctrl+P/Shift+D не сработают.
+    """Раскладку Schemagee больше НЕ переключаем — только пишем её в лог.
 
-    Раскладка привязана к потоку окна, поэтому переключать её нужно у окна
-    Schemagee, а не у нашего интерфейса.
+    Клавиши отправляются виртуальными кодами (SendInput), поэтому русская
+    раскладка им не мешает, а язык пользователя мы не меняем.
     """
     try:
         if hwnd is None:
             hwnd = ctypes.windll.user32.GetForegroundWindow()
-        hkl_en = ctypes.windll.user32.LoadKeyboardLayoutW("00000409", 1)
         target_thread = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
-        current_hkl = ctypes.windll.user32.GetKeyboardLayout(target_thread)
-        if (current_hkl & 0xFFFF) == 0x0409:
-            log("Раскладка уже английская.")
-            return
-        ctypes.windll.user32.PostMessageW(hwnd, 0x0050, 0, hkl_en)
-        time.sleep(0.25)
-        current_hkl = ctypes.windll.user32.GetKeyboardLayout(target_thread)
-        if (current_hkl & 0xFFFF) != 0x0409:
-            force_foreground(hwnd)
-            send_keys('alt+shift')
-            time.sleep(0.25)
-        log("Раскладка переключена на английскую.")
+        hkl = ctypes.windll.user32.GetKeyboardLayout(target_thread) & 0xFFFF
+        lang = ("EN" if hkl == 0x0409
+                else ("RU" if hkl == 0x0419 else f"0x{hkl:04X}"))
+        log(f"Раскладка Schemagee: {lang} (не переключаем — клавиши по VK).")
     except Exception as e:
-        log(f"Ошибка переключения раскладки: {e}")
+        log(f"Раскладка: {e}")
 
 
 def open_file_in_schemagee(path):
