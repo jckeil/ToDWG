@@ -4663,64 +4663,94 @@ def run_gui():
         win.attributes("-topmost", True)
         win.focus_force()
 
+    def close_report(win=None):
+        """Закрывает окно отчёта и возвращает в главное окно (без выхода)."""
+        if win is not None:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+        try:
+            root.deiconify()
+            root.lift()
+            root.focus_force()
+        except Exception:
+            pass
+
     def show_success(stats):
         hide_progress()
         win = tk.Toplevel(root)
         win.title("Готово")
         win.resizable(False, False)
         win.configure(bg=WIN11_BG)
-        win.protocol("WM_DELETE_WINDOW", lambda: close_app(0))
+        win.protocol("WM_DELETE_WINDOW", lambda: close_report(win))
         apply_icon(win)
-        _center(win, 780, 640)
-        card_s = _card(win, 720, 580)
+        _center(win, 680, 450)
+        card_s = _card(win, 640, 410)
 
         tk.Label(card_s, text="✓  АЛЬБОМ СОБРАН",
-                 font=("Segoe UI Variable Display", 16, "bold"),
-                 bg=WIN11_CARD_BG, fg=WIN11_OK).pack(pady=(20, 10))
-        tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(fill="x", padx=30,
-                                                          pady=(0, 12))
+                 font=("Segoe UI Variable Display", 14, "bold"),
+                 bg=WIN11_CARD_BG, fg=WIN11_OK).pack(pady=(14, 6))
+        tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(fill="x", padx=24,
+                                                         pady=(0, 8))
 
-        tk.Label(card_s, text="Исходный файл:", font=FONT_BODY_SM,
-                 bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(anchor="w", padx=36)
-        tk.Label(card_s, text=os.path.basename(str(stats.get("source") or "?")),
-                 font=FONT_BODY,
-                 bg=WIN11_CARD_BG, fg=WIN11_TEXT, wraplength=640,
-                 justify="left").pack(anchor="w", padx=36, pady=(0, 10))
+        src_row = tk.Frame(card_s, bg=WIN11_CARD_BG)
+        src_row.pack(anchor="w", padx=28, fill="x")
+        tk.Label(src_row, text="Файл:", font=FONT_BODY_SM,
+                 bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="left")
+        tk.Label(src_row,
+                 text=os.path.basename(str(stats.get("source") or "?")),
+                 font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+                 fg=WIN11_TEXT).pack(side="left", padx=(6, 0))
 
         info = tk.Frame(card_s, bg=WIN11_CARD_BG)
-        info.pack(fill="x", padx=36, anchor="w")
-        _row(info, "Листов:", f"{stats.get('sheet_count', 0)} "
-                              f"({stats.get('sheet_count_source', '—')})", 0)
-        _row(info, "Экспорт листов:",
-             format_duration(stats.get("conv_time", 0.0)), 1)
-        _row(info, "Сборка альбома:",
-             format_duration(stats.get("merge_time", 0.0)), 2)
-        _row(info, "Схем в альбоме:", str(stats.get("placed", 0)), 3)
-        _row(info, "Ошибок:", str(stats.get("errors", 0)), 4)
+        info.pack(anchor="w", padx=28, pady=(6, 0))
+        bold = ("Segoe UI Variable Text", 10, "bold")
 
-        tk.Label(card_s, text="Результат:", font=FONT_BODY_SM, bg=WIN11_CARD_BG,
-                 fg=WIN11_SUBTEXT).pack(anchor="w", padx=36, pady=(12, 2))
+        def cell(row, col, label, value, color=WIN11_TEXT):
+            tk.Label(info, text=label, font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+                     fg=WIN11_SUBTEXT, anchor="w").grid(
+                row=row, column=col, sticky="w", pady=1)
+            tk.Label(info, text=value, font=bold, bg=WIN11_CARD_BG,
+                     fg=color, anchor="w").grid(
+                row=row, column=col + 1, sticky="w", padx=(4, 22), pady=1)
+
+        count_src = stats.get("sheet_count_source") or "—"
+        manual = "вручную" in str(count_src).lower()
+        cell(0, 0, "Листов:",
+             f"{stats.get('sheet_count', 0)} ({count_src})",
+             WIN11_ACCENT if manual else WIN11_TEXT)
+        cell(0, 2, "Схем:", str(stats.get("placed", 0)))
+        cell(1, 0, "Экспорт:", format_duration(stats.get("conv_time", 0.0)))
+        cell(1, 2, "Сборка:", format_duration(stats.get("merge_time", 0.0)))
+        cell(2, 0, "Ошибок:", str(stats.get("errors", 0)),
+             WIN11_DANGER if stats.get("errors") else WIN11_TEXT)
+
+        tk.Label(card_s, text="Результат:", font=FONT_BODY_SM,
+                 bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(
+            anchor="w", padx=28, pady=(8, 1))
         size_kb = float(stats.get("target_size", 0)) / 1024.0
-        tk.Label(card_s, text=f"{stats.get('target', '—')}  ({size_kb:.1f} КБ)",
-                 font=FONT_BODY, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
-                 wraplength=640, justify="left").pack(anchor="w", padx=36)
+        tk.Label(card_s,
+                 text=f"{stats.get('target', '—')}  ({size_kb:.0f} КБ)",
+                 font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
+                 wraplength=580, justify="left").pack(anchor="w", padx=28)
 
         notes = stats.get("notes") or []
         if notes:
-            tk.Label(card_s, text="Замечания:", font=FONT_BODY_SM,
-                     bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(anchor="w",
-                                                              padx=36,
-                                                              pady=(12, 2))
-            tk.Label(card_s, text="\n".join("• " + n for n in notes),
+            tk.Label(card_s, text="! " + "  ".join(notes),
                      font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_DANGER,
-                     wraplength=640, justify="left").pack(anchor="w", padx=36)
+                     wraplength=580, justify="left").pack(
+                anchor="w", padx=28, pady=(6, 0))
 
         btns = tk.Frame(card_s, bg=WIN11_CARD_BG)
-        btns.pack(side="bottom", pady=(16, 26))
+        btns.pack(side="bottom", pady=(10, 14))
         _button(btns, "Открыть папку",
-                lambda: _open_folder(stats["out_dir"])).pack(side="left",
-                                                             padx=(0, 10))
-        _button(btns, "Закрыть", lambda: close_app(0)).pack(side="left")
+                lambda: _open_folder(stats.get("out_dir", "")),
+                primary=False).pack(side="left", padx=(0, 8))
+        _button(btns, "Закрыть отчет",
+                lambda: close_report(win)).pack(side="left", padx=(0, 8))
+        _button(btns, "Завершить работу", lambda: close_app(0),
+                primary=False).pack(side="left")
 
         apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
@@ -4732,41 +4762,71 @@ def run_gui():
         win.title("Отчёт о конвертации")
         win.resizable(False, False)
         win.configure(bg=WIN11_BG)
-        win.protocol("WM_DELETE_WINDOW", lambda: close_app(0))
+        win.protocol("WM_DELETE_WINDOW", lambda: close_report(win))
         apply_icon(win)
-        _center(win, 840, 620)
-        card_b = _card(win, 780, 560)
+        _center(win, 780, 560)
+        card_b = _card(win, 740, 500)
 
-        ok_count = sum(1 for r in results if r and not r.get("error"))
+        ok_items = [r for r in results if r and not r.get("error")]
+        ok_count = len(ok_items)
         fail_count = len(results) - ok_count
+        total_sheets = sum(int(r.get("sheet_count") or 0) for r in ok_items)
+        total_placed = sum(int(r.get("placed") or 0) for r in ok_items)
+        total_errors = sum(int(r.get("errors") or 0) for r in ok_items)
+
         tk.Label(card_b, text=f"ГОТОВО: {ok_count} из {len(results)}",
-                 font=("Segoe UI Variable Display", 16, "bold"),
+                 font=("Segoe UI Variable Display", 14, "bold"),
                  bg=WIN11_CARD_BG,
                  fg=WIN11_OK if not fail_count else WIN11_DANGER).pack(
-            pady=(20, 10))
-        tk.Frame(card_b, bg=WIN11_BORDER, height=1).pack(fill="x", padx=30,
-                                                         pady=(0, 10))
+            pady=(14, 0))
+        tk.Label(card_b,
+                 text=(f"листов {total_sheets} · схем {total_placed} · "
+                       f"ошибок {total_errors}"),
+                 font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+                 fg=WIN11_SUBTEXT).pack(pady=(0, 6))
+        tk.Frame(card_b, bg=WIN11_BORDER, height=1).pack(fill="x", padx=24,
+                                                          pady=(0, 6))
 
-        text = tk.Text(card_b, height=17, font=FONT_BODY_SM,
+        txt = tk.Frame(card_b, bg=WIN11_CARD_BG)
+        txt.pack(fill="both", expand=True, padx=18)
+        text = tk.Text(txt, height=14, font=FONT_BODY_SM,
                        bg=WIN11_CARD_BG, fg=WIN11_TEXT, bd=0,
                        highlightthickness=0, wrap="word")
-        text.pack(fill="both", expand=True, padx=34)
-        for item in results:
+        scroll = ttk.Scrollbar(txt, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scroll.set)
+        text.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        for index, item in enumerate(results):
             source = os.path.basename(item.get("source") or "?")
             if item.get("error"):
-                text.insert("end", f"✗ {source}\n   {item['error']}\n\n")
+                text.insert("end", f"✗ {source}\n   {item['error']}\n")
             else:
                 text.insert(
                     "end",
                     f"✓ {source}\n"
-                    f"   листов {item.get('sheet_count')}, "
-                    f"схем {item.get('placed')}, "
+                    f"   листов {item.get('sheet_count')} "
+                    f"({item.get('sheet_count_source') or '—'}) · "
+                    f"схем {item.get('placed')} · "
                     f"ошибок {item.get('errors')}\n"
-                    f"   {item.get('target')}\n\n")
+                    f"   экспорт {format_duration(item.get('conv_time', 0.0))} · "
+                    f"сборка {format_duration(item.get('merge_time', 0.0))}\n"
+                    f"   {item.get('target') or ''}\n")
+            if index < len(results) - 1:
+                text.insert("end", "\n")
         text.config(state="disabled")
 
-        _button(card_b, "Закрыть", lambda: close_app(0)).pack(side="bottom",
-                                                             pady=(14, 22))
+        btns = tk.Frame(card_b, bg=WIN11_CARD_BG)
+        btns.pack(side="bottom", pady=(10, 14))
+        first_ok = next((r for r in ok_items if r.get("out_dir")), None)
+        if first_ok is not None:
+            _button(btns, "Открыть папку",
+                    lambda p=first_ok["out_dir"]: _open_folder(p),
+                    primary=False).pack(side="left", padx=(0, 8))
+        _button(btns, "Закрыть отчет",
+                lambda: close_report(win)).pack(side="left", padx=(0, 8))
+        _button(btns, "Завершить работу", lambda: close_app(0),
+                primary=False).pack(side="left")
+
         apply_theme_tree(win, theme_state["dark"])
         win.attributes("-topmost", True)
         win.focus_force()
@@ -4847,7 +4907,7 @@ def run_gui():
             elif report_var.get():
                 show_success(payload or {})
             else:
-                close_app(0)
+                close_report(None)
         elif kind == "ask_schemagee":
             try:
                 show_ask_schemagee(payload or "")
@@ -4861,7 +4921,7 @@ def run_gui():
             if report_var.get():
                 show_batch(payload)
             else:
-                close_app(0)
+                close_report(None)
         elif kind == "error":
             show_error(payload or "Неизвестная ошибка.")
         elif kind == "stopped":
