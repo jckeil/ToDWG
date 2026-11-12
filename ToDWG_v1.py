@@ -82,7 +82,6 @@ SETTINGS_FILENAME = "ToDWG_settings.json"
 SETTINGS_DIRNAME = "ToDWG"   # папка в «Моих документах» для конфига
 
 LOG_FILENAME = "ToDWG.log"
-LOG_MAX_BYTES = 2 * 1024 * 1024
 
 STOP_HOTKEY = "ctrl+alt+0"
 STOP_EVENT = threading.Event()
@@ -290,14 +289,7 @@ def is_elevated():
 
 # --- Лог: один файл в папке настроек, только при включённом журнале -----------
 _global_log = None
-_run_log = None
-_run_log_path = None
 _LOG_ENABLED = None   # None — ещё не читали настройку
-
-
-def _rotate(path):
-    """Оставлено для совместимости: журнал теперь перезаписывается на запуск."""
-    return None
 
 
 def init_log():
@@ -337,31 +329,18 @@ def set_logging_enabled(enabled):
     init_log()
 
 
-def attach_run_log(path):
-    """Подключает лог конкретного запуска (лежит в папке результата)."""
-    global _run_log, _run_log_path
-    try:
-        _run_log = open(path, "a", encoding="utf-8", buffering=1)
-        _run_log_path = path
-    except Exception:
-        _run_log = None
-        _run_log_path = None
-
-
 def close_logs():
-    global _global_log, _run_log
-    for fp in (_run_log, _global_log):
-        try:
-            if fp:
-                fp.close()
-        except Exception:
-            pass
-    _run_log = None
+    global _global_log
+    try:
+        if _global_log:
+            _global_log.close()
+    except Exception:
+        pass
     _global_log = None
 
 
 def log(msg=""):
-    """Пишет строку в общий лог, лог запуска и stdout (если он есть)."""
+    """Пишет строку в журнал (если включён) и stdout (если он есть)."""
     line = str(msg)
     try:
         if sys.stdout is not None:
@@ -373,12 +352,6 @@ def log(msg=""):
         if _global_log:
             _global_log.write(stamp + line + "\n")
             _global_log.flush()
-    except Exception:
-        pass
-    try:
-        if _run_log:
-            _run_log.write(stamp + line + "\n")
-            _run_log.flush()
     except Exception:
         pass
 
