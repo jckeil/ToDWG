@@ -984,7 +984,16 @@ def focus_description(hwnd):
     pid = window_pid(target) if target else 0
     schem_pid = window_pid(hwnd)
     where = "в Schemagee" if pid and pid == schem_pid else "НЕ в Schemagee"
-    return f"{title!r} класс={cls} hwnd={target} pid={pid} — {where}"
+    hkl = 0
+    if target:
+        try:
+            tid = ctypes.windll.user32.GetWindowThreadProcessId(target, None)
+            hkl = ctypes.windll.user32.GetKeyboardLayout(tid) & 0xFFFF
+        except Exception:
+            hkl = 0
+    lang = "EN" if hkl == 0x0409 else ("RU" if hkl else "?")
+    return (f"{title!r} класс={cls} hwnd={target} pid={pid} "
+            f"раскладка={lang}(0x{hkl:04X}) — {where}")
 
 
 def click_window_caption(hwnd):
@@ -1181,6 +1190,9 @@ def send_hotkey_until(hwnd, keys, finder, what="диалог", attempts=3,
     for attempt in range(1, attempts + 1):
         check_stop()
         ensure_schemagee_active(hwnd, what="Schemagee")
+        # keyboard.send шлёт скан-коды: на русской раскладке Ctrl+P/Shift+D
+        # могут не сработать. Перед каждой командой гарантируем английскую.
+        switch_to_english(hwnd)
         log(f"  Отправляем {keys} (попытка {attempt}/{attempts}); "
             f"фокус: {focus_description(hwnd)}")
         send_keys(keys)
@@ -3451,6 +3463,23 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
         emit("progress", "Определяем число листов…")
         sheet_count = read_sheet_count_auto()
         count_source = "диалог печати"
+        if sheet_count is None:
+            # Первый экземпляр Schemagee иногда «не слышит» Ctrl+P. Как при
+            # ручном повторном запуске: один раз переоткрываем файл и пробуем.
+            log("Ctrl+P не открыл диалог печати — перезапускаем Schemagee "
+                "и повторяем определение числа листов.")
+            emit("progress", "Перезапускаем Schemagee и продолжаем…")
+            new_hwnd = 0
+            try:
+                new_hwnd = reopen_schemagee(source, 1)
+            except TaskStopped:
+                raise
+            except Exception as e:
+                log(f"Перезапуск Schemagee не удался: {e}")
+            if new_hwnd:
+                sheet_count = read_sheet_count_auto()
+                if sheet_count is not None:
+                    count_source = "диалог печати (после перезапуска)"
         stamps = read_sheet_count_from_sdd(source)
         if sheet_count is None:
             sheet_count = stamps
