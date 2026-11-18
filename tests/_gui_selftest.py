@@ -206,6 +206,32 @@ def mainloop_stub(self, n=0):
     report.append(("outdir_net_hint", net_hint))
     report.append(("outdir_local_hint_cleared", local_hint_cleared))
 
+    # --- «Справка»: окно не больше главного, текст доступен --------------
+    by_text = {b.cget("text"): b for b in buttons}
+    help_btn = by_text.get("Справка")
+    help_opened = False
+    help_size_ok = False
+    help_text_ok = False
+    if help_btn is not None:
+        help_btn.invoke()
+        self.update()
+        tops = [w for w in self.winfo_children()
+                if isinstance(w, tk.Toplevel)]
+        if tops:
+            help_win = tops[-1]
+            help_opened = True
+            help_size_ok = (help_win.winfo_width() <= self.winfo_width()
+                            and help_win.winfo_height() <= self.winfo_height())
+            for w in walk(help_win):
+                if isinstance(w, tk.Text):
+                    content = w.get("1.0", "end")
+                    help_text_ok = ("Shift+D" in content
+                                    and "Параметры" in content
+                                    and "Ctrl+Alt+0" in content)
+                    break
+            help_win.destroy()
+    report.append(("help_window", help_opened, help_size_ok, help_text_ok))
+
     self.destroy()
 
 

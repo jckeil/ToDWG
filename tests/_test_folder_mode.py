@@ -260,6 +260,13 @@ def main():
          m.install_no_network_guard) = saved_main_helpers
 
 
+    # --- справка: ключевые требования на месте --------------------------
+    help_text = m.HELP_TEXT
+    for phrase in ("Shift+D", "«Параметры»", "«Клавиши»",
+                   "одинаковыми правами", "Ctrl+Alt+0",
+                   "Только локальные диски"):
+        check("справка содержит: " + phrase, phrase in help_text)
+
     print("\nИТОГ:", "OK" if not fails else f"FAIL ({len(fails)})")
     return 0 if not fails else 1
 

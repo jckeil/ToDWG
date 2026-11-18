@@ -4200,6 +4200,107 @@ def run_headless(opts):
 # БЛОК 5. ОКНА (главное, прогресс, успех, ошибка, остановка)
 # =============================================================================
 
+# Полный текст справки: показывается кнопкой «Справка» рядом с «Настройки».
+# Строки КАПСОМ считаются заголовками, первая строка — названием.
+HELP_TEXT = r"""ToDWG 1.8 — Schemagee → DXF → DWG
+
+НАЗНАЧЕНИЕ
+ToDWG автоматизирует ручной экспорт листов из Schemagee 3.5: открывает
+файл .sdd, сохраняет каждый лист в DXF, проверяет файлы и собирает из них
+один альбом DWG — схемы в пространстве модели в ряд и отдельный лист
+(layout) на каждую схему.
+
+ПОДГОТОВКА КОМПЬЮТЕРА
+• Windows 10/11 и Schemagee 3.5.
+• Шрифт isocpeui.ttf (ISOCPEUR Italic) установлен в системе.
+• Для DWG нужен AutoCAD или ODA File Converter. Без них альбом останется
+  в DXF, а в отчёте появится замечание.
+• Python устанавливать не нужно — интерпретатор вшит в exe.
+
+ПРАВА ПРИЛОЖЕНИЙ
+ToDWG, Schemagee и AutoCAD (или ODA File Converter) должны быть запущены
+с одинаковыми правами — обычно от имени обычного пользователя.
+Если Schemagee запускается от администратора, а ToDWG — нет, Windows
+блокирует нажатия клавиш в чужое окно (UIPI): программа не сможет управлять
+экспортом. Конвертация через AutoCAD тоже может не найти приложение.
+Проверьте ярлыки: «Свойства» → «Совместимость» → галочка «Запускать эту
+программу от имени администратора» должна быть снята у всех приложений.
+ToDWG не требует прав администратора.
+
+НАСТРОЙКА SCHEMAGEE (ОБЯЗАТЕЛЬНО)
+1. Откройте Schemagee: «Настройка» → «Параметры» → вкладка «Клавиши».
+2. Назначьте экспорт в DXF на Shift+D — ToDWG нажимает эту комбинацию
+   для каждого листа.
+3. Убедитесь, что Ctrl+P открывает диалог печати: по нему программа
+   определяет число листов. Если диалог не открывается, включите в
+   «Настройках» ToDWG ручное указание количества листов.
+4. Перед запуском закройте Schemagee. Если он уже открыт, ToDWG предложит
+   закрыть его и продолжить или отменить работу.
+
+КАК РАБОТАЕТ ПРОГРАММА
+1. Открывает .sdd в Schemagee и ждёт готовности окна.
+2. Определяет число листов: по диалогу печати (Ctrl+P) и по штампам
+   «Формат А…» в файле. При расхождении приоритет у штампов.
+3. Для каждого листа: Shift+D → форма «Экспорт в DXF» → кнопка «…» →
+   путь → «Сохранить» → «Экспорт». Созданный файл проверяется на диске.
+4. При сбое листа повторяет попытку и при необходимости перезапускает
+   Schemagee (не более 3 раз на файл).
+5. Собирает альбом: схемы в модели в ряд, на каждый лист — layout A2
+   (A3/A4 — по настройке).
+6. Конвертирует альбом в DWG через AutoCAD или ODA File Converter.
+7. Показывает отчёт: листы, ошибки, время, путь к результату.
+
+КАК РАБОТАТЬ
+1. Запустите ToDWG 1.8.exe.
+2. Добавьте файлы: «Добавить файлы», перетаскивание .sdd в окно или
+   «Обработать папку…» (рекурсивно найдёт все .sdd и наполнит список;
+   лишние уберите крестиком).
+3. Куда сохранять. По умолчанию .dwg кладётся рядом с исходным .sdd.
+   Чтобы сложить результаты в одну папку, включите «Выбрать папку для
+   готовых файлов» и нажмите «Изменить…». Сетевые папки запрещены.
+4. Нажмите «Конвертировать» и не трогайте мышь и клавиатуру до окончания.
+5. Аварийная остановка — Ctrl+Alt+0 (работает всегда).
+6. В отчёте: «Открыть папку», «Закрыть отчёт» (вернуться в программу),
+   «Завершить работу» (выйти).
+
+НАСТРОЙКИ
+• Скорость кликера: 4 шага. «Оптимально» — по умолчанию; на медленном ПК
+  выберите «Медленно».
+• «Задержки кликера»: снятая галочка ускоряет работу, но возможны повторы.
+• «Удалять .dxf файлы после конвертации» — оставляет только итоговый DWG.
+• «Выводить отчёт по завершении» — показывает окно с итогами.
+• «Блокировать нажатия мыши» — защита от случайных кликов; Ctrl+Alt+0
+  снимает блокировку.
+• «Расширенные настройки главного окна» — показывают ручное число листов
+  и выбор формата A2/A3/A4.
+• «Сохранять журнал конвертирования» — записывает ToDWG.log.
+
+ОГРАНИЧЕНИЯ
+• Только локальные диски: сетевые папки, сетевые диски и junction
+  отклоняются. Программа не выходит в интернет.
+• За один сеанс обрабатывается один файл Schemagee; открытый Schemagee
+  нужно закрыть.
+• Внешние ссылки внутри DXF (XREF, IMAGE, подложки) не проверяются:
+  при их наличии к сети может обратиться AutoCAD.
+• Файл .sdd не должен быть открыт в другой программе.
+
+ЕСЛИ ЧТО-ТО НЕ ТАК
+• Остановить работу: Ctrl+Alt+0.
+• Не сохраняются листы: проверьте Shift+D в Schemagee, права приложений,
+  закройте лишние окна Schemagee.
+• Не создаётся DWG: установите AutoCAD или ODA File Converter; альбом
+  останется в DXF.
+• Подробности — в журнале: «Настройки» → «Сохранять журнал конвертирования»,
+  файл Документы\ToDWG\ToDWG.log (или %LOCALAPPDATA%\ToDWG\ToDWG.log).
+• Не запускайте ToDWG от администратора.
+
+ГДЕ ЛЕЖАТ ФАЙЛЫ
+• Результат: рядом с исходным .sdd или в выбранной папке.
+• Конфиг, журнал, result.json, placed.json: Документы\ToDWG
+  (при перенаправленных в сеть «Документах» — %LOCALAPPDATA%\ToDWG).
+"""
+
+
 def run_gui():
     """Главное окно. Возвращает код выхода: 0 — успех, 1 — ошибка, 2 — стоп."""
     result = {"code": 0}
@@ -5393,11 +5494,105 @@ def run_gui():
             pass
         win.focus_force()
 
-    tk.Button(card, text="Настройки", command=open_settings,
-              font=FONT_BODY_SM, bg="#E5E5E5", fg=WIN11_TEXT,
-              activebackground="#D6D6D6", activeforeground=WIN11_TEXT,
-              relief="flat", bd=0, highlightthickness=0, cursor="hand2",
-              padx=12, pady=4).place(relx=0.0, x=16, y=12, anchor="nw")
+    help_win = {"win": None}
+
+    def open_help():
+        """Полная инструкция в прокручиваемом окне (не больше главного)."""
+        existing = help_win["win"]
+        if existing is not None:
+            try:
+                existing.deiconify()
+                existing.lift()
+                existing.focus_force()
+                return
+            except tk.TclError:
+                help_win["win"] = None
+
+        dark = bool(theme_state["dark"])
+        window_bg = "#2B2B2B" if dark else WIN11_BG
+        card_bg = "#333333" if dark else WIN11_CARD_BG
+        text_fg = "#E6E6E6" if dark else WIN11_TEXT
+        win = tk.Toplevel(root)
+        help_win["win"] = win
+        win.title("Справка — ToDWG")
+        win.resizable(False, False)
+        win.configure(bg=window_bg)
+        apply_icon(win)
+        win.transient(root)
+        try:
+            root.update_idletasks()
+            width = min(660, max(420, root.winfo_width() - 60))
+            height = min(620, max(360, root.winfo_height() - 60))
+        except Exception:
+            width, height = 640, 600
+        _center(win, width, height)
+
+        body = tk.Frame(win, bg=card_bg, highlightthickness=1,
+                        highlightbackground=WIN11_BORDER)
+        body.pack(fill="both", expand=True, padx=16, pady=(16, 10))
+        scroll = ttk.Scrollbar(body, orient="vertical")
+        text = tk.Text(body, wrap="word", font=FONT_BODY_SM, bg=card_bg,
+                       fg=text_fg, relief="flat", bd=0,
+                       highlightthickness=0, padx=14, pady=12,
+                       insertbackground=text_fg, spacing3=3,
+                       yscrollcommand=scroll.set)
+        scroll.config(command=text.yview)
+        scroll.pack(side="right", fill="y")
+        text.pack(side="left", fill="both", expand=True)
+        text.tag_configure("title",
+                           font=("Segoe UI Variable Display", 13, "bold"),
+                           spacing3=8)
+        text.tag_configure("head",
+                           font=("Segoe UI Variable Display", 10, "bold"),
+                           spacing1=10, spacing3=4)
+        text.tag_configure("body", font=FONT_BODY_SM)
+        first = True
+        for line in HELP_TEXT.splitlines():
+            stripped = line.strip()
+            if first and stripped:
+                text.insert("end", line + "\n", "title")
+                first = False
+                continue
+            tag = "head" if stripped and stripped.isupper() else "body"
+            text.insert("end", line + "\n", tag)
+        text.config(state="disabled")
+
+        def wheel(event):
+            text.yview_scroll(int(-event.delta / 120), "units")
+            return "break"
+
+        text.bind("<MouseWheel>", wheel)
+
+        def close_help():
+            help_win["win"] = None
+            try:
+                win.grab_release()
+            except tk.TclError:
+                pass
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+
+        win.protocol("WM_DELETE_WINDOW", close_help)
+        win.bind("<Escape>", lambda e: close_help())
+        _button(win, "Закрыть", close_help).pack(pady=(0, 14))
+        apply_theme_tree(win, dark)
+        try:
+            win.grab_set()
+        except tk.TclError:
+            pass
+        win.focus_force()
+
+    top_left = tk.Frame(card, bg=WIN11_CARD_BG)
+    top_left.place(relx=0.0, x=16, y=12, anchor="nw")
+    for top_text, top_command in (("Настройки", open_settings),
+                                  ("Справка", open_help)):
+        tk.Button(top_left, text=top_text, command=top_command,
+                  font=FONT_BODY_SM, bg="#E5E5E5", fg=WIN11_TEXT,
+                  activebackground="#D6D6D6", activeforeground=WIN11_TEXT,
+                  relief="flat", bd=0, highlightthickness=0, cursor="hand2",
+                  padx=12, pady=4).pack(side="left", padx=(0, 8))
 
     version_label = tk.Label(card, text=APP_DISPLAY_VERSION,
                              font=FONT_VERSION, bg=WIN11_CARD_BG,
