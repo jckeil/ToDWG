@@ -1,6 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 """Проверки новых функций v1.8: папка (задача 3) и проверка доступности (задача 2)."""
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -109,6 +110,144 @@ def main():
           os.path.isdir(work_dir) and not m.is_network_path(work_dir),
           work_dir)
     os.rmdir(work_dir)
+
+    # --- аудит: длинные пути, прямые слэши, URL -------------------------
+    long_p = "\\\\?\\"
+    check("_strip_long_prefix убирает \\\\?\\",
+          m._strip_long_prefix(long_p + "C:\\Temp") == "C:\\Temp")
+    check("_strip_long_prefix превращает \\\\?\\UNC\\ в \\\\",
+          m._strip_long_prefix(long_p + "UNC\\srv\\share") == "\\\\srv\\share")
+    check("_strip_long_prefix убирает \\??\\",
+          m._strip_long_prefix("\\??\\C:\\Temp") == "C:\\Temp")
+
+    check("is_network_path //srv/share", m.is_network_path("//srv/share"))
+    check("is_network_path \\\\?\\UNC\\",
+          m.is_network_path(long_p + "UNC\\srv\\share"))
+    check("is_network_path //?/UNC/", m.is_network_path("//?/UNC/srv/share"))
+    check("is_network_path http://",
+          m.is_network_path("http://example.org/a.sdd"))
+    check("is_network_path file://", m.is_network_path("file:///C:/x.sdd"))
+    local_tmp = tempfile.gettempdir()
+    check("is_network_path \\\\?\\ локальный диск",
+          not m.is_network_path(long_p + local_tmp))
+    check("is_network_path //?/ локальный диск",
+          not m.is_network_path("//?/" + local_tmp.replace("\\", "/")))
+    check("is_network_path пустой/None",
+          not m.is_network_path("") and not m.is_network_path(None))
+
+    saved_drive_kind = m._drive_kind
+    try:
+        m._drive_kind = lambda p: m.DRIVE_REMOTE
+        check("is_network_path DRIVE_REMOTE", m.is_network_path("Q:\\work"))
+    finally:
+        m._drive_kind = saved_drive_kind
+
+    # --- временная папка: сетевой TEMP пропускается ---------------------
+    saved_gettempdir = m.tempfile.gettempdir
+    saved_localappdata = os.environ.get("LOCALAPPDATA")
+    local_root = tempfile.mkdtemp(prefix="ToDWG_localapp_")
+    os.makedirs(os.path.join(local_root, "Temp"))
+    try:
+        m.tempfile.gettempdir = lambda: r"\\192.0.2.1\share\temp"
+        os.environ["LOCALAPPDATA"] = local_root
+        fallback = m.local_temp_dir()
+        check("local_temp_dir пропускает сетевой TEMP",
+              bool(fallback) and not m.is_network_path(fallback)
+              and os.path.abspath(fallback).startswith(
+                  os.path.abspath(local_root)),
+              fallback)
+    finally:
+        m.tempfile.gettempdir = saved_gettempdir
+        if saved_localappdata is None:
+            os.environ.pop("LOCALAPPDATA", None)
+        else:
+            os.environ["LOCALAPPDATA"] = saved_localappdata
+
+    # --- настройки: сетевые «Документы» -> LOCALAPPDATA -----------------
+    saved_documents = m.documents_dir
+    local_docs = tempfile.mkdtemp(prefix="ToDWG_docs_")
+    try:
+        m.documents_dir = lambda: r"\\192.0.2.1\share\Docs"
+        os.environ["LOCALAPPDATA"] = local_docs
+        sdir = m.settings_dir()
+        check("settings_dir обходит сетевые Документы",
+              os.path.abspath(sdir).startswith(os.path.abspath(local_docs))
+              and not m.is_network_path(sdir), sdir)
+    finally:
+        m.documents_dir = saved_documents
+        if saved_localappdata is None:
+            os.environ.pop("LOCALAPPDATA", None)
+        else:
+            os.environ["LOCALAPPDATA"] = saved_localappdata
+
+    # --- публичные точки: отказ до обращения к ФС -----------------------
+    check("run_headless сеть -> код 2",
+          m.run_headless({"dxf_folder": net, "name": "check"}) == 2)
+
+    try:
+        m.merge_all(net, root)
+        check("merge_all сетевой вход -> RuntimeError", False)
+    except RuntimeError as exc:
+        check("merge_all сетевой вход -> RuntimeError",
+              "запрещ" in str(exc), exc)
+
+    try:
+        m.convert_with_oda(os.path.join(net, "ODAFileConverter.exe"),
+                           os.path.join(root, "a.dxf"),
+                           os.path.join(root, "a.dwg"))
+        check("convert_with_oda сетевой exe -> RuntimeError", False)
+    except RuntimeError as exc:
+        check("convert_with_oda сетевой exe -> RuntimeError",
+              "запрещ" in str(exc), exc)
+
+    check("open_file_in_schemagee сеть -> False",
+          m.open_file_in_schemagee(os.path.join(net, "a.sdd")) is False)
+    m._open_folder(net)
+    check("_open_folder сеть -> без запуска", True)
+
+    # --- runtime-запрет сети -------------------------------------------
+    try:
+        m._no_network_audit("socket.connect", ("192.0.2.1", 80))
+        check("аудит-хук блокирует socket.connect", False)
+    except RuntimeError as exc:
+        check("аудит-хук блокирует socket.connect",
+              "запрещ" in str(exc), exc)
+
+    guard_code = (
+        "import sys; sys.path.insert(0, %r); import ToDWG_v1 as m; "
+        "m.install_no_network_guard(); import socket; "
+        "socket.create_connection(('192.0.2.1', 80), 2)"
+        % os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    try:
+        proc = subprocess.run([sys.executable, "-c", guard_code],
+                              capture_output=True, text=True, timeout=15)
+        # В ToDWG_v1 sys.excepthook пишет в лог/stdout, поэтому смотрим оба потока.
+        output = (proc.stdout or "") + (proc.stderr or "")
+        check("runtime-запрет сети в процессе",
+              proc.returncode != 0
+              and ("Сетевой доступ запрещён" in output
+                   or "СЕТЕВОЙ ДОСТУП ЗАПРЕЩЁН" in output),
+              output[-200:])
+    except subprocess.TimeoutExpired:
+        check("runtime-запрет сети в процессе", False, "таймаут")
+
+    # --- CLI: сетевой путь -> код 2, без запуска -----------------------
+    saved_main_helpers = (m.init_log, m.setup_logging_bridge,
+                          m.install_no_network_guard)
+    saved_argv = m.sys.argv
+    m.init_log = lambda: None
+    m.setup_logging_bridge = lambda: None
+    m.install_no_network_guard = lambda: None
+    try:
+        m.sys.argv = ["ToDWG_v1.py", "--headless", "--dxf-folder", net,
+                      "--name", "check"]
+        code = m.main()
+        check("main CLI сеть -> код 2", code == 2, code)
+    finally:
+        m.sys.argv = saved_argv
+        (m.init_log, m.setup_logging_bridge,
+         m.install_no_network_guard) = saved_main_helpers
 
 
     print("\nИТОГ:", "OK" if not fails else f"FAIL ({len(fails)})")

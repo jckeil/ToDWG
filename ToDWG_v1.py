@@ -149,7 +149,8 @@ def desktop_dir():
         # CSIDL_DESKTOPDIRECTORY = 0x0010
         if ctypes.windll.shell32.SHGetFolderPathW(None, 0x0010, None, 0, buf) == 0:
             path = buf.value
-            if path and os.path.isdir(path):
+            # Сеть проверяем до isdir: «мёртвый» сервер иначе подвесит старт.
+            if path and not is_network_path(path) and os.path.isdir(path):
                 return path
     except Exception:
         pass
@@ -158,7 +159,7 @@ def desktop_dir():
                  os.path.join("OneDrive", "Desktop"),
                  os.path.join("OneDrive", "Рабочий стол")):
         candidate = os.path.join(home, name)
-        if os.path.isdir(candidate):
+        if not is_network_path(candidate) and os.path.isdir(candidate):
             return candidate
     return home
 
@@ -185,14 +186,18 @@ def _drive_kind(path):
 
 
 def is_network_path(path):
-    """Путь ведёт в сеть: UNC (\\\\сервер\\папка) или подключённый сетевой диск.
+    """Путь ведёт в сеть: UNC, сетевой диск, junction/симлинк или URL.
 
-    Проверяются и «длинные» пути (\\\\?\\UNC\\…), и junction/симлинки:
-    локальный по имени путь может указывать на сетевую папку.
+    Проверяются и «длинные» пути (\\\\?\\UNC\\…), прямые слэши и адреса вида
+    ``http://`` / ``file://`` (открывать их нельзя — это выход в сеть).
     """
     if not path:
         return False
-    p = _strip_long_prefix(path).replace("/", "\\")
+    raw = str(path).strip().strip('"')
+    # Схему проверяем до замены слэшей, иначе "http://" станет "http:\\".
+    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", raw):
+        return True
+    p = _strip_long_prefix(raw.replace("/", "\\"))
     if p.startswith("\\\\"):
         return True
     if _drive_kind(p) == DRIVE_REMOTE:
@@ -269,7 +274,8 @@ def documents_dir():
         if ctypes.windll.shell32.SHGetFolderPathW(None, 0x0005, None, 0,
                                                   buf) == 0:
             path = buf.value
-            if path and os.path.isdir(path):
+            # Сеть проверяем до isdir: «мёртвый» сервер иначе подвесит старт.
+            if path and not is_network_path(path) and os.path.isdir(path):
                 return path
     except Exception:
         pass
@@ -278,7 +284,7 @@ def documents_dir():
                  os.path.join("OneDrive", "Documents"),
                  os.path.join("OneDrive", "Документы")):
         candidate = os.path.join(home, name)
-        if os.path.isdir(candidate):
+        if not is_network_path(candidate) and os.path.isdir(candidate):
             return candidate
     return home
 
@@ -317,7 +323,7 @@ def load_settings():
         path = settings_path()
         if not os.path.isfile(path):
             legacy = os.path.join(BASE_DIR, SETTINGS_FILENAME)
-            if os.path.isfile(legacy):
+            if not is_network_path(legacy) and os.path.isfile(legacy):
                 with open(legacy, encoding="utf-8") as f:
                     data = json.load(f)
                 return data if isinstance(data, dict) else {}
@@ -506,6 +512,46 @@ def setup_logging_bridge():
     logging.getLogger("ezdxf").setLevel(logging.WARNING)
 
 
+# --- Полный запрет сети в процессе программы ---------------------------------
+
+BLOCKED_NET_EVENTS = {
+    "socket.connect",
+    "socket.getaddrinfo",
+    "socket.gethostbyname",
+    "socket.gethostbyaddr",
+    "socket.getnameinfo",
+    "urllib.Request",
+    "http.client.connect",
+    "ftplib.connect",
+    "smtplib.connect",
+}
+
+
+def _no_network_audit(event, args):
+    """Аудит-хук: любая попытка выйти в сеть — ошибка, а не запрос."""
+    if event in BLOCKED_NET_EVENTS:
+        try:
+            log(f"СЕТЕВОЙ ДОСТУП ЗАПРЕЩЁН: {event}")
+        except Exception:
+            pass
+        raise RuntimeError(f"Сетевой доступ запрещён программой: {event}")
+
+
+def install_no_network_guard():
+    """Запрещает сокеты, DNS и HTTP в процессе ToDWG (уровень Python).
+
+    Дочерние приложения (Schemagee, AutoCAD, ODA) и C-расширения этим не
+    покрываются — у них собственные сетевые политики.
+    """
+    try:
+        sys.addaudithook(_no_network_audit)
+    except Exception as e:
+        try:
+            log(f"Не удалось включить запрет сети: {e}")
+        except Exception:
+            pass
+
+
 def format_time(seconds):
     sec = int(seconds)
     ms = int(round((seconds - sec) * 1000))
@@ -649,6 +695,10 @@ def _button(parent, text, command, primary=True):
 
 
 def _open_folder(path):
+    bad = local_path_error(path, "папка")
+    if bad:
+        log("Открытие папки: отказ — " + bad.replace("\n", " "))
+        return
     try:
         os.startfile(path)
         log(f"Открываем папку: {path}")
@@ -2386,6 +2436,10 @@ def switch_to_english(hwnd=None):
 
 def open_file_in_schemagee(path):
     """Открывает .sdd так, как это делает проводник (двойной клик)."""
+    bad = local_path_error(path, "файл")
+    if bad:
+        log("Открытие файла: отказ — " + bad.replace("\n", " "))
+        return False
     normalized = os.path.normpath(path)
     log(f"Открываем файл: {normalized}")
 
@@ -2964,11 +3018,16 @@ def available_backends():
 def convert_with_oda(exe, dxf_path, dwg_path, version=DEFAULT_DWG_VERSION,
                      timeout=600):
     """Конвертация через ODA File Converter (папка -> папка)."""
+    ok_exe, err_exe = check_local_path(exe, "ODA File Converter")
+    if not ok_exe:
+        raise RuntimeError(err_exe)
     dxf_path = os.path.abspath(dxf_path)
     dwg_path = os.path.abspath(dwg_path)
     base = os.path.splitext(os.path.basename(dxf_path))[0]
 
-    with tempfile.TemporaryDirectory(prefix='oda_') as tmp:
+    # Временная папка только на локальном диске: %TEMP% бывает сетевым.
+    tmp = make_work_dir("oda_")
+    try:
         in_dir = os.path.join(tmp, 'in')
         out_dir = os.path.join(tmp, 'out')
         os.makedirs(in_dir)
@@ -2992,6 +3051,8 @@ def convert_with_oda(exe, dxf_path, dwg_path, version=DEFAULT_DWG_VERSION,
 
         os.makedirs(os.path.dirname(dwg_path), exist_ok=True)
         shutil.move(produced, dwg_path)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     log(f'DWG создан (ODA): {dwg_path}')
     return dwg_path
@@ -3550,6 +3611,12 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
     delete_sources — удалить входные DXF листов после успешной сборки DWG;
     paper_w/h      — размер листа в мм (A2 по умолчанию, A3/A4 — по выбору).
     """
+    ok, err = check_local_path(input_dir, "папка DXF")
+    if not ok:
+        raise RuntimeError(err)
+    ok, err = check_local_path(output_dir, "папка результата")
+    if not ok:
+        raise RuntimeError(err)
     os.makedirs(output_dir, exist_ok=True)
 
     files = [
@@ -4056,6 +4123,12 @@ def run_headless(opts):
         log("ОШИБКА: --headless требует --dxf-folder ПАПКА "
             "(готовые DXF для сборки).")
         return 1
+    bad = local_path_error(folder, "папка DXF")
+    if bad:
+        # Сетевые пути запрещены: до обращения к ФС, без задержек.
+        log(bad.replace("\n", " "))
+        print(bad)
+        return 2
     if not os.path.isdir(folder):
         log(f"ОШИБКА: папка не найдена: {folder}")
         return 1
@@ -4608,10 +4681,11 @@ def run_gui():
         initial = out_state["dir"]
         if pending:
             src = os.path.dirname(pending[0])
-            if src and os.path.isdir(src):
+            if src and not is_network_path(src) and os.path.isdir(src):
                 initial = src
-        if not os.path.isdir(initial):
-            initial = app_dir()
+        # Сеть проверяем до isdir: стартовая папка может быть сетевой.
+        if not initial or is_network_path(initial) or not os.path.isdir(initial):
+            initial = choose_start_dir()
         folder = filedialog.askdirectory(
             parent=root,
             title="Выберите папку для результата",
@@ -6080,6 +6154,7 @@ def main():
     set_app_user_model_id()
     init_log()
     setup_logging_bridge()
+    install_no_network_guard()
     STOP_EVENT.clear()
 
     log("=" * 70)

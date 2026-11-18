@@ -130,6 +130,35 @@ def mainloop_stub(self, n=0):
         report.append(("combo_after_off",
                        ", ".join(str(c.cget("state")) for c in combos)))
 
+    # --- сетевые пути: диалоги обязаны отклонять выбор ------------------
+    net_errors = []
+    old_askdir = app.filedialog.askdirectory
+    old_askfiles = app.filedialog.askopenfilenames
+    old_showerror = app.messagebox.showerror
+    app.filedialog.askdirectory = lambda **kw: r"\\192.0.2.1\share"
+    app.filedialog.askopenfilenames = lambda **kw: (
+        r"\\192.0.2.1\share\a.sdd",)
+    app.messagebox.showerror = (
+        lambda title, text, **kw: net_errors.append((title, text)))
+    try:
+        by_text = {b.cget("text"): b for b in buttons}
+        folder_btn = by_text.get("Обработать папку…")
+        select_btn = by_text.get("Добавить файлы")
+        if folder_btn is not None:
+            folder_btn.invoke()
+            self.update()
+        if select_btn is not None:
+            select_btn.invoke()
+            self.update()
+    finally:
+        app.filedialog.askdirectory = old_askdir
+        app.filedialog.askopenfilenames = old_askfiles
+        app.messagebox.showerror = old_showerror
+    report.append((
+        "net_dialogs_rejected",
+        sum(1 for t, _ in net_errors if t == "Сетевые пути запрещены"),
+        "|".join(t for t, _ in net_errors)))
+
     self.destroy()
 
 
