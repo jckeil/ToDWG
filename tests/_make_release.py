@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Создаёт GitHub Release для jckeil/ToDWG и прикладывает собранный exe.
 
 Токен берётся из GH_TOKEN или из сохранённых учётных данных git;
@@ -16,7 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-REPO = "jckeil/ToDWG2"
+REPO = "jckeil/ToDWG"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
 
@@ -108,7 +108,7 @@ def main():
             "name": f"ToDWG {version}",
             "body": body,
             "draft": False,
-            "prerelease": True,
+            "prerelease": False,
         }
         try:
             release = api(

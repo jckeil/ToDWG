@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Проверка кодировки: DXF Schemagee (R12, cp1251) читаются без мусора.
 
 Schemagee пишет R12 (AC1009) без $DWGCODEPAGE; ezdxf.readfile() берёт для
@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDWG_v2 as m
+import ToDWG_v1 as m
 
 m.init_log()
 

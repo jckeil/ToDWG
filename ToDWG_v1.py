@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # =============================================================================
 #
-#   ToDWG v2.0 (beta)
+#   ToDWG v1.8
 #   Один файл, один exe: Schemagee (.sdd) -> DXF -> DWG.
 #
 #   Структура файла (блоки идут строго по порядку):
@@ -13,9 +13,9 @@
 #       БЛОК 5. ОКНА (главное, прогресс, успех, ошибка, остановка)
 #       БЛОК 6. ТОЧКА ВХОДА
 #
-#   exe не зависит от места запуска и соседних файлов: иконка вшита,
-#   результаты и лог пишутся в папку рядом с exe
-#   (<ИМЯ>_<ГГГГ-ММ-ДД-ЧЧ-ММ-СС>).
+#   exe не зависит от места запуска и соседних файлов: иконка вшита;
+#   по умолчанию результат (.dwg/.dxf) кладётся рядом с исходным .sdd,
+#   при включённом журнале — ToDWG.log в папке настроек (Documents\ToDWG).
 #
 #   Ключи командной строки (только для отладки/проверки):
 #       --dxf-folder ПАПКА   пропустить кликер, собрать альбом из готовых DXF;
@@ -70,12 +70,12 @@ from ezdxf.xref import ConflictPolicy
 # =============================================================================
 
 APP_NAME = "ToDWG"
-APP_VERSION = "2.1"
-APP_STAGE = "beta"                     # убрать, когда версия станет публичной
-APP_DISPLAY_VERSION = f"v{APP_VERSION} ({APP_STAGE})"   # "v2.0 (beta)"
+APP_VERSION = "1.8"
+APP_STAGE = ""                     # убрать, когда версия станет публичной
+APP_DISPLAY_VERSION = f"v{APP_VERSION}" + (f" ({APP_STAGE})" if APP_STAGE else "")   # "v1.8"
 APP_FULL_TITLE = f"{APP_NAME} {APP_DISPLAY_VERSION} — Schemagee → DXF → DWG"
 APP_INNER_TEXT = "Schemagee → DXF → DWG"
-APP_USER_MODEL_ID = "ToDWG.App.V2"
+APP_USER_MODEL_ID = "ToDWG.App.V1"
 
 ICON_FILENAME = "Logo_toDWG.ico"
 

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Проверка починки «битых» DXF Schemagee (сырые переводы строк).
 
 Schemagee пишет многострочный текст без экранирования: после кода группы
@@ -13,7 +13,7 @@ import tempfile
 import ezdxf
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDWG_v2 as m
+import ToDWG_v1 as m
 
 m.init_log()
 

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Проверка форматов листов: A2/A3/A4 и ориентация в layout'ах альбома."""
 import glob
 import os
@@ -7,7 +7,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDWG_v2 as m
+import ToDWG_v1 as m
 
 m.init_log()
 

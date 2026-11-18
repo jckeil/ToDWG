@@ -1,10 +1,10 @@
-# ToDWG v2.0 (beta) — Schemagee → DXF → DWG
+﻿# ToDWG v1.8 — Schemagee → DXF → DWG
 
 Автоматизирует штатный экспорт листов из Schemagee 3.5 (`.sdd`) в DXF и
 собирает из них один альбом DWG: схемы в пространстве модели в ряд и по
 отдельному layout на каждый лист (A2).
 
-Всё в одном файле `ToDWG_v2.py`; exe не зависит от места запуска и
+Всё в одном файле `ToDWG_v1.py`; exe не зависит от места запуска и
 соседних файлов. **По умолчанию каждый `.dwg` сохраняется рядом со своим
 исходным `.sdd`**; можно включить «Выбрать папку для готовых файлов» и
 указать общую папку. Журнал (при включённой галочке «Сохранять журнал
@@ -17,15 +17,15 @@
 
 ```
 ToDWG\
-├─ ToDWG_v2.py              основной скрипт (кликер + конвертер + GUI)
-├─ ToDWG_v2.spec            сборка PyInstaller (onefile, без консоли)
+├─ ToDWG_v1.py              основной скрипт (кликер + конвертер + GUI)
+├─ ToDWG_v1.spec            сборка PyInstaller (onefile, без консоли)
 ├─ Logo_toDWG.ico           иконка, вшивается в exe
 ├─ README.md                краткое описание и запуск
 ├─ FEATURES.md              список всех возможностей
 ├─ CHANGELOG.md             история изменений по версиям
 ├─ ROADMAP.md               планы и идеи
 ├─ input\                   26 DXF (результат экспорта) — данные для тестов
-├─ dist\                    собранный ToDWG_v2.0-beta.exe (локально, не в git)
+├─ dist\                    собранный ToDWG_v1.8.exe (локально, не в git)
 └─ tests\                   локальные проверки (не входят в exe)
 ```
 
@@ -35,8 +35,8 @@ ToDWG\
 ## Запуск из исходников
 
 ```powershell
-python ToDWG_v2.py                 # GUI
-python ToDWG_v2.py --headless --dxf-folder input --name check
+python ToDWG_v1.py                 # GUI
+python ToDWG_v1.py --headless --dxf-folder input --name check
 ```
 
 Ключи (только для отладки):
@@ -101,10 +101,10 @@ python ToDWG_v2.py --headless --dxf-folder input --name check
 ## Сборка exe
 
 ```powershell
-python -m PyInstaller ToDWG_v2.spec --clean --noconfirm
+python -m PyInstaller ToDWG_v1.spec --clean --noconfirm
 ```
 
-Результат: `dist\ToDWG_v2.0-beta.exe` (onefile, ~30 МБ). Папка `build\`
+Результат: `dist\ToDWG_v1.8.exe` (onefile, ~30 МБ). Папка `build\`
 пересоздаётся и в репозиторий не входит.
 
 ## Тесты

@@ -1,11 +1,11 @@
-"""Локальная проверка экстренной остановки и вспомогательных функций."""
+﻿"""Локальная проверка экстренной остановки и вспомогательных функций."""
 import os
 import sys
 import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDWG_v2 as m
+import ToDWG_v1 as m
 
 m.init_log()
 ok = []

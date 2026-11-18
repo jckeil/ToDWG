@@ -1,4 +1,4 @@
-"""Проверка нажатия «Экспорт» в модальном окне Schemagee.
+﻿"""Проверка нажатия «Экспорт» в модальном окне Schemagee.
 
 Проверяем то, из-за чего листы не сохранялись: после диалога «Сохранение»
 нужно нажать кнопку в форме экспорта (в старом кликере — Tab+Enter).
@@ -15,7 +15,7 @@ import win32con
 import win32gui
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDWG_v2 as m
+import ToDWG_v1 as m
 
 m.init_log()
 results = []

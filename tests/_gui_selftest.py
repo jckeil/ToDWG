@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Тест интерфейса: строит главное окно и опрашивает виджеты."""
 import os
 import sys
@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDWG_v2 as app
+import ToDWG_v1 as app
 
 report = []
 

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Смоук собранного exe: главное окно появляется и закрывается по WM_CLOSE."""
 import os
 import subprocess
@@ -9,8 +9,8 @@ import win32con
 import win32gui
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.join(ROOT, 'dist', 'ToDWG_v2.0-beta.exe')
-TITLE = 'ToDWG v2.'
+EXE = os.path.join(ROOT, 'dist', 'ToDWG_v1.8.exe')
+TITLE = 'ToDWG v1.8'
 
 if not os.path.isfile(EXE):
     print('нет exe:', EXE)

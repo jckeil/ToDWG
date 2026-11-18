@@ -1,6 +1,6 @@
-# -*- mode: python ; coding: utf-8 -*-
+﻿# -*- mode: python ; coding: utf-8 -*-
 
-# ToDWG v2.0 (beta) — один exe, без внешних файлов рядом.
+# ToDWG v1.8 — один exe, без внешних файлов рядом.
 # Иконка вшивается в ресурсы и извлекается через sys._MEIPASS.
 # tkinterdnd2 несёт бинарники tkdnd — их нужно включить в сборку.
 
@@ -9,7 +9,7 @@ from PyInstaller.utils.hooks import collect_data_files
 dnd_datas = collect_data_files('tkinterdnd2')
 
 a = Analysis(
-    ['ToDWG_v2.py'],
+    ['ToDWG_v1.py'],
     pathex=[],
     binaries=[],
     datas=[('Logo_toDWG.ico', '.')] + dnd_datas,
@@ -45,7 +45,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ToDWG_v2.1-beta',
+    name='ToDWG_v1.8',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

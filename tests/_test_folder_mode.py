@@ -1,11 +1,11 @@
-# -*- coding: utf-8 -*-
-"""Проверки новых функций v2.0: папка (задача 3) и проверка доступности (задача 2)."""
+﻿# -*- coding: utf-8 -*-
+"""Проверки новых функций v1.8: папка (задача 3) и проверка доступности (задача 2)."""
 import os
 import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import ToDWG_v2 as m   # noqa: E402
+import ToDWG_v1 as m   # noqa: E402
 
 fails = []
 
