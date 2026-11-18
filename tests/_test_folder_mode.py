@@ -267,6 +267,21 @@ def main():
                    "Только локальные диски"):
         check("справка содержит: " + phrase, phrase in help_text)
 
+    for phrase in ("Python устанавливать", "по штампам",
+                   "Внешние ссылки внутри DXF", "Файл .sdd не должен",
+                   "перенаправленных"):
+        check("справка без: " + phrase, phrase not in help_text)
+
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    txt_path = os.path.join(root_dir, "Справка ToDWG 1.8.txt")
+    try:
+        with open(txt_path, encoding="utf-8") as f:
+            txt_help = f.read()
+        check("txt-справка совпадает с HELP_TEXT",
+              txt_help.strip() == help_text.strip())
+    except OSError as e:
+        check("txt-справка существует", False, str(e))
+
     print("\nИТОГ:", "OK" if not fails else f"FAIL ({len(fails)})")
     return 0 if not fails else 1
 
