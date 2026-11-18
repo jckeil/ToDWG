@@ -9,7 +9,7 @@ import win32con
 import win32gui
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.join(ROOT, 'dist', 'ToDWG_v1.8.exe')
+EXE = os.path.join(ROOT, 'dist', 'ToDWG 1.8.exe')
 TITLE = 'ToDWG v1.8'
 
 if not os.path.isfile(EXE):

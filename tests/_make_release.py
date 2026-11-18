@@ -22,8 +22,15 @@ CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
 
 
 def default_asset(version):
-    """Путь к exe версии: dist\\ToDWG_v1.6.exe."""
-    return os.path.join(ROOT, "dist", f"ToDWG_{version}.exe")
+    """Путь к exe версии: dist\\ToDWG 1.8.exe (старое имя — с подчёркиванием)."""
+    candidates = [
+        os.path.join(ROOT, "dist", f"ToDWG {version.lstrip('v')}.exe"),
+        os.path.join(ROOT, "dist", f"ToDWG_{version}.exe"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return candidates[0]
 
 
 def token_from_git():

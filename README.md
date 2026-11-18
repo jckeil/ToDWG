@@ -25,7 +25,7 @@ ToDWG\
 ├─ CHANGELOG.md             история изменений по версиям
 ├─ ROADMAP.md               планы и идеи
 ├─ input\                   26 DXF (результат экспорта) — данные для тестов
-├─ dist\                    собранный ToDWG_v1.8.exe (локально, не в git)
+├─ dist\                    собранный ToDWG 1.8.exe (локально, не в git)
 └─ tests\                   локальные проверки (не входят в exe)
 ```
 
@@ -105,7 +105,7 @@ python ToDWG_v1.py --headless --dxf-folder input --name check
 python -m PyInstaller ToDWG_v1.spec --clean --noconfirm
 ```
 
-Результат: `dist\ToDWG_v1.8.exe` (onefile, ~30 МБ). Папка `build\`
+Результат: `dist\ToDWG 1.8.exe` (onefile, ~30 МБ). Папка `build\`
 пересоздаётся и в репозиторий не входит.
 
 ## Тесты
