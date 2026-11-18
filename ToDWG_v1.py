@@ -88,8 +88,15 @@ LOG_FILENAME = "ToDWG.log"
 STOP_HOTKEY = "ctrl+alt+0"
 STOP_EVENT = threading.Event()
 
-# Проверка доступности папки (в т.ч. сетевой): не даём интерфейсу зависнуть.
+# Проверка доступности папки: не даём интерфейсу зависнуть.
 NET_PROBE_TIMEOUT = 5.0   # секунды на одну проверку папки
+
+# GetDriveTypeW: диск, подключённый по сети (Z: → \\сервер\папка).
+DRIVE_REMOTE = 4
+
+# Текст отказа: программа работает только с локальными дисками ПК.
+LOCAL_ONLY_HINT = ("Программа работает только с локальными дисками "
+                   "компьютера: сетевые папки и сетевые диски запрещены.")
 
 
 def app_dir():
@@ -156,12 +163,102 @@ def desktop_dir():
     return home
 
 
+def _strip_long_prefix(path):
+    r"""Убирает префиксы \\?\ и \??\ (длинные пути Windows)."""
+    p = str(path or "").strip().strip('"')
+    if p.startswith("\\\\?\\UNC\\"):
+        p = "\\\\" + p[8:]
+    elif p.startswith("\\\\?\\") or p.startswith("\\??\\"):
+        p = p[4:]
+    return p
+
+
+def _drive_kind(path):
+    """Тип диска по GetDriveTypeW (4 — сетевой); None, если не диск."""
+    drive = os.path.splitdrive(path)[0]
+    if len(drive) == 2 and drive[1] == ":":
+        try:
+            return ctypes.windll.kernel32.GetDriveTypeW(drive + "\\")
+        except Exception:
+            return None
+    return None
+
+
 def is_network_path(path):
-    """UNC-путь (\\\\сервер\\папка): обращение к нему может ждать таймаут сети."""
+    """Путь ведёт в сеть: UNC (\\\\сервер\\папка) или подключённый сетевой диск.
+
+    Проверяются и «длинные» пути (\\\\?\\UNC\\…), и junction/симлинки:
+    локальный по имени путь может указывать на сетевую папку.
+    """
     if not path:
         return False
-    p = str(path).strip()
-    return p.startswith("\\\\") or p.startswith("//")
+    p = _strip_long_prefix(path).replace("/", "\\")
+    if p.startswith("\\\\"):
+        return True
+    if _drive_kind(p) == DRIVE_REMOTE:
+        return True
+    # junction/симлинк: реальный путь может оказаться сетевым.
+    try:
+        real = _strip_long_prefix(os.path.realpath(p)).replace("/", "\\")
+    except Exception:
+        return False
+    if real and real != p:
+        if real.startswith("\\\\"):
+            return True
+        if _drive_kind(real) == DRIVE_REMOTE:
+            return True
+    return False
+
+
+def local_path_error(path, what="путь"):
+    """Текст отказа, если путь сетевой; пустая строка — путь локальный.
+
+    Единая точка запрета: используется и в интерфейсе, и в конвейере,
+    чтобы сетевой путь нельзя было обойти ни диалогом, ни перетаскиванием.
+    """
+    if not path:
+        return ""
+    if not is_network_path(path):
+        return ""
+    return f"{what.capitalize()} в сети запрещён: {path}\n\n{LOCAL_ONLY_HINT}"
+
+
+def check_local_path(path, what="путь"):
+    """(ok, error): удобная обёртка над local_path_error."""
+    err = local_path_error(path, what)
+    return (False, err) if err else (True, "")
+
+
+def local_temp_dir():
+    """Временная папка только на локальном диске (TEMP бывает в сети).
+
+    Возвращает путь или None, если локального кандидата не нашлось.
+    """
+    candidates = []
+    try:
+        candidates.append(tempfile.gettempdir())
+    except Exception:
+        pass
+    local_app = os.environ.get("LOCALAPPDATA")
+    if local_app:
+        candidates.append(os.path.join(local_app, "Temp"))
+    system_drive = os.environ.get("SystemDrive", "C:")
+    candidates.append(os.path.join(system_drive + "\\", "Windows", "Temp"))
+    for candidate in candidates:
+        if candidate and not is_network_path(candidate) \
+                and os.path.isdir(candidate):
+            return candidate
+    return None
+
+
+def make_work_dir(prefix="ToDWG_"):
+    """Создаёт временную папку на локальном диске; иначе — ошибка."""
+    root = local_temp_dir()
+    if not root:
+        raise RuntimeError(
+            "Не найдена локальная временная папка.\n\n" + LOCAL_ONLY_HINT)
+    return tempfile.mkdtemp(prefix=prefix, dir=root)
+
 
 
 def documents_dir():
@@ -187,8 +284,22 @@ def documents_dir():
 
 
 def settings_dir():
-    """Папка настроек: <Мои документы>\\ToDWG (создаётся при необходимости)."""
-    folder = os.path.join(documents_dir(), SETTINGS_DIRNAME)
+    """Папка настроек: <Мои документы>\\ToDWG (создаётся при необходимости).
+
+    Если «Мои документы» перенаправлены в сеть (folder redirection), конфиг
+    и журнал пишутся в локальную папку %LOCALAPPDATA%\\ToDWG — программа
+    не должна работать с сетевыми путями.
+    """
+    docs = documents_dir()
+    if is_network_path(docs):
+        local_app = os.environ.get("LOCALAPPDATA")
+        if local_app and not is_network_path(local_app):
+            folder = os.path.join(local_app, SETTINGS_DIRNAME)
+        else:
+            folder = os.path.join(os.environ.get("SystemDrive", "C:") + "\\",
+                                  SETTINGS_DIRNAME)
+    else:
+        folder = os.path.join(docs, SETTINGS_DIRNAME)
     try:
         os.makedirs(folder, exist_ok=True)
     except Exception:
@@ -420,6 +531,11 @@ def probe_path(path, timeout=NET_PROBE_TIMEOUT, need_write=True):
     if not path:
         return False, "Путь не задан."
     folder = os.path.normpath(str(path))
+    bad = local_path_error(folder, "папка")
+    if bad:
+        # Сетевые пути запрещены: в сеть даже не обращаемся.
+        log("Проверка папки: отказ — " + bad.replace("\n", " "))
+        return False, bad
     result = {"ok": False, "error": "проверка не выполнена"}
 
     def worker():
@@ -461,8 +577,7 @@ def probe_path(path, timeout=NET_PROBE_TIMEOUT, need_write=True):
     th.start()
     th.join(timeout)
     if th.is_alive():
-        kind = "Сетевая папка" if is_network_path(folder) else "Папка"
-        message = f"{kind} недоступна (таймаут {timeout:g} с): {folder}"
+        message = f"Папка недоступна (таймаут {timeout:g} с): {folder}"
         log("Проверка папки: " + message)
         return False, message
     if result["ok"]:
@@ -3590,22 +3705,33 @@ def make_run_folder(name, base_dir=None):
     """Создаёт папку запуска: <base_dir>\\<ИМЯ>_<ГГГГ-ММ-ДД-ЧЧ-ММ-СС>.
 
     base_dir — выбранная пользователем папка результата; без неё, как и
-    раньше, результаты пишутся рядом с программой.
+    раньше, результаты пишутся рядом с программой. Сетевые пути запрещены.
     """
     stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     root = base_dir or BASE_DIR
+    ok, err = check_local_path(root, "папка результата")
+    if not ok:
+        raise RuntimeError(err)
     folder = os.path.join(root, f"{name}_{stamp}")
     os.makedirs(folder, exist_ok=True)
     return folder
 
 
 def find_sdd_recursive(root):
-    """Возвращает отсортированный список всех .sdd в папке и подпапках."""
+    """Возвращает отсортированный список всех .sdd в папке и подпапках.
+
+    Сетевые подпапки (в т.ч. подключённые как junction) пропускаются:
+    программа работает только с локальными дисками.
+    """
     found = []
-    for base, _dirs, files in os.walk(root):
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs
+                   if not is_network_path(os.path.join(base, d))]
         for fname in files:
             if fname.lower().endswith(".sdd"):
-                found.append(os.path.normpath(os.path.join(base, fname)))
+                full = os.path.normpath(os.path.join(base, fname))
+                if not local_path_error(full, "файл"):
+                    found.append(full)
     found.sort(key=lambda p: p.lower())
     return found
 
@@ -3627,8 +3753,13 @@ def relocate_result(stats, target_dir):
     """Кладёт готовый DWG/DXF рядом с исходником под уникальным именем.
 
     Возвращает новый путь или None, если перенести не удалось. Временная
-    папка-источник удаляется вызывающей стороной.
+    папка-источник удаляется вызывающей стороной. Сетевой target_dir
+    запрещён: результат остаётся во временной папке.
     """
+    ok, err = check_local_path(target_dir, "папка результата")
+    if not ok:
+        log(err.replace("\n", " "))
+        return None
     target = stats.get("target")
     if not target or not os.path.isfile(target):
         return None
@@ -3680,6 +3811,13 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     check_stop()
     _OWNED_SCHEMAGEE["opened"] = False
     source = os.path.normpath(file_path)
+    ok_src, err_src = check_local_path(source, "файл")
+    if not ok_src:
+        raise RuntimeError(err_src)
+    if out_dir:
+        ok_out, err_out = check_local_path(out_dir, "папка результата")
+        if not ok_out:
+            raise RuntimeError(err_out)
     name = os.path.splitext(os.path.basename(source))[0]
 
     # Работать с уже открытым Schemagee нельзя: скрипт начнёт сохранять
@@ -4112,8 +4250,9 @@ def run_gui():
         if paths:
             folder_state["mode"] = False
             manual_folder_var.set(False)
-            add_files(paths)
+            _added, rejected = add_files(paths)
             hint_var.set("")
+            report_rejected(rejected)
             sync_outdir_row()
 
     def on_drop(event):
@@ -4128,8 +4267,9 @@ def run_gui():
             return
         folder_state["mode"] = False
         manual_folder_var.set(False)
-        add_files(files)
+        _added, rejected = add_files(files)
         hint_var.set("")
+        report_rejected(rejected)
         sync_outdir_row()
 
     DROP_BG = "#F5F5F5"
@@ -4294,11 +4434,35 @@ def run_gui():
         except NameError:
             pass
 
+    def report_rejected(rejected):
+        """Сообщает, какие файлы не приняты из-за сетевого пути."""
+        if not rejected:
+            return
+        hint_var.set(rejected[0][1].split("\n")[0])
+        names = "\n".join(os.path.basename(p) for p, _ in rejected[:5])
+        more = "" if len(rejected) <= 5 else f"\n… и ещё {len(rejected) - 5}"
+        messagebox.showerror(
+            "Сетевые пути запрещены",
+            f"Пропущено файлов: {len(rejected)}\n{names}{more}\n\n"
+            + LOCAL_ONLY_HINT
+            + "\n\nСкопируйте файлы на локальный диск и добавьте снова.",
+            parent=root)
+
     def add_files(paths):
         added = 0
+        rejected = []
         for path in paths:
             path = os.path.normpath(str(path))
-            if not path.lower().endswith(".sdd") or not os.path.isfile(path):
+            if not path.lower().endswith(".sdd"):
+                continue
+            # Сеть проверяем до isfile(): обращение к «мёртвому» серверу
+            # может подвесить интерфейс.
+            bad = local_path_error(path, "файл")
+            if bad:
+                rejected.append((path, bad))
+                log("Отклонён сетевой путь: " + path)
+                continue
+            if not os.path.isfile(path):
                 continue
             if path not in pending:
                 pending.append(path)
@@ -4306,17 +4470,31 @@ def run_gui():
         if added:
             remember_dir(pending[-1])
             log(f"Добавлено файлов: {added}, всего {len(pending)}")
+        if rejected:
+            log(f"Пропущено сетевых файлов: {len(rejected)}")
         refresh_pending()
+        return added, rejected
 
     def on_convert():
         ok, manual_count = read_manual_count()
         if not ok or not pending:
             return
+        # Финальная проверка: сетевые файлы не должны попасть в конвейер
+        # ни через диалог, ни через перетаскивание.
+        for path in list(pending):
+            bad = local_path_error(path, "файл")
+            if bad:
+                pending.remove(path)
+                hint_var.set(bad.split("\n")[0])
+                log("Отклонён сетевой путь: " + path)
+                refresh_pending()
+                messagebox.showerror("Сетевые пути запрещены", bad, parent=root)
+                return
         manual_folder = manual_folder_var.get()
         if manual_folder:
             ok_dir, err = probe_path(out_state["dir"], need_write=True)
             if not ok_dir:
-                hint_var.set(err)
+                hint_var.set(err.split("\n")[0])
                 messagebox.showerror("Папка результата недоступна", err,
                                      parent=root)
                 return
@@ -4352,6 +4530,12 @@ def run_gui():
         if not folder:
             return
         folder = os.path.normpath(folder)
+        bad = local_path_error(folder, "папка")
+        if bad:
+            hint_var.set(bad.split("\n")[0])
+            log("Отклонён сетевой путь: " + folder)
+            messagebox.showerror("Сетевые пути запрещены", bad, parent=root)
+            return
         hint_var.set("Проверяем доступность папки…")
         try:
             root.update_idletasks()
@@ -4359,7 +4543,7 @@ def run_gui():
             pass
         ok, err = probe_path(folder, need_write=True)
         if not ok:
-            hint_var.set(err)
+            hint_var.set(err.split("\n")[0])
             messagebox.showerror("Папка недоступна", err, parent=root)
             return
         files = find_sdd_recursive(folder)
@@ -4373,7 +4557,8 @@ def run_gui():
         hint_var.set("")
         folder_state["mode"] = True
         manual_folder_var.set(False)
-        add_files(files)
+        _added, rejected = add_files(files)
+        report_rejected(rejected)
         sync_outdir_row()
         messagebox.showinfo(
             "Файлы найдены",
@@ -4436,9 +4621,15 @@ def run_gui():
         if not folder:
             return False
         folder = os.path.normpath(folder)
+        bad = local_path_error(folder, "папка результата")
+        if bad:
+            hint_var.set(bad.split("\n")[0])
+            log("Отклонён сетевой путь результата: " + folder)
+            messagebox.showerror("Сетевые пути запрещены", bad, parent=root)
+            return False
         ok, err = probe_path(folder, need_write=True)
         if not ok:
-            hint_var.set(err)
+            hint_var.set(err.split("\n")[0])
             messagebox.showerror("Папка недоступна", err, parent=root)
             return False
         out_state["dir"] = folder
@@ -5741,7 +5932,18 @@ def run_gui():
                 source_dir = os.path.dirname(path)
                 target_dir = (result_dir if (manual_folder and result_dir)
                               else source_dir)
-                work_root = tempfile.mkdtemp(prefix="ToDWG_")
+                ok_target, err_target = check_local_path(target_dir,
+                                                         "папка результата")
+                if not ok_target:
+                    log(err_target.replace("\n", " "))
+                    results.append({
+                        "source": path,
+                        "name": os.path.splitext(os.path.basename(path))[0],
+                        "error": err_target,
+                        "out_dir": "",
+                    })
+                    continue
+                work_root = make_work_dir()
                 if mouse_block_var.get():
                     start_mouse_block()
                 try:
@@ -5884,6 +6086,17 @@ def main():
     log(f"{APP_NAME} {APP_DISPLAY_VERSION}: старт")
     log(f"Папка программы: {BASE_DIR}")
     log(f"Drag & drop: {'доступен' if HAS_DND else 'недоступен'}")
+
+    # Сетевые пути запрещены и в режиме командной строки.
+    for key, what in (("dxf_folder", "папка DXF"), ("out_dir", "папка результата")):
+        value = opts.get(key)
+        if value:
+            ok, err = check_local_path(value, what)
+            if not ok:
+                log(err.replace("\n", " "))
+                print(err)
+                close_logs()
+                return 2
 
     code = 0
     try:

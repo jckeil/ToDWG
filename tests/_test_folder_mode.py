@@ -71,10 +71,45 @@ def main():
     check("probe_path текст ошибки понятен", "не найдена" in err2.lower(), err2)
 
     # --- probe_path: недоступный сетевой путь -> таймаут/ошибка --------
-    # 192.0.2.0/24 — TEST-NET-1 (RFC 5737), заведомо недостижим.
+    # Сетевые пути запрещены полностью: отказ без обращения в сеть.
     net = r"\\192.0.2.1\share"
     ok3, err3 = m.probe_path(net, timeout=2.0, need_write=True)
-    check("probe_path недоступная сеть -> ошибка", not ok3, err3)
+    check("probe_path сетевой путь -> отказ", not ok3 and "запрещ" in err3, err3)
+
+    # --- запрет сетевых путей: единая проверка (v1.8) ------------------
+    check("is_network_path UNC", m.is_network_path(net))
+    check("is_network_path локальная папка", not m.is_network_path(root))
+    bad = m.local_path_error(os.path.join(net, "a.sdd"), "файл")
+    check("local_path_error отвергает сеть", "запрещ" in bad, bad)
+    check("local_path_error пропускает локальный путь",
+          m.local_path_error(os.path.join(root, "a.sdd"), "файл") == "")
+    check("check_local_path локальный -> ok", m.check_local_path(root)[0])
+
+    try:
+        m.make_run_folder("net", net)
+        check("make_run_folder сеть -> RuntimeError", False)
+    except RuntimeError as exc:
+        check("make_run_folder сеть -> RuntimeError", "запрещ" in str(exc), exc)
+
+    try:
+        m.run_pipeline(os.path.join(net, "a.sdd"), None,
+                       lambda *a, **k: None)
+        check("run_pipeline сеть -> RuntimeError", False)
+    except RuntimeError as exc:
+        check("run_pipeline сеть -> RuntimeError", "запрещ" in str(exc), exc)
+
+    check("relocate_result сеть -> None",
+          m.relocate_result({"target": p3}, net) is None)
+
+    tmp_dir = m.local_temp_dir()
+    check("local_temp_dir локальный",
+          bool(tmp_dir) and not m.is_network_path(tmp_dir), tmp_dir)
+    work_dir = m.make_work_dir()
+    check("make_work_dir локальный",
+          os.path.isdir(work_dir) and not m.is_network_path(work_dir),
+          work_dir)
+    os.rmdir(work_dir)
+
 
     print("\nИТОГ:", "OK" if not fails else f"FAIL ({len(fails)})")
     return 0 if not fails else 1
