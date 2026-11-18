@@ -215,6 +215,16 @@ def is_network_path(path):
     return False
 
 
+# Текст отказа для пользователя: у папок и файлов разный смысл отказа.
+NETWORK_PATH_MESSAGES = {
+    "папка": "Доступ к сетевой папке запрещён",
+    "папка DXF": "Доступ к сетевой папке запрещён",
+    "папка результата": "Выбор сетевой папки запрещён",
+    "файл": "Файл в сети запрещён",
+    "ODA File Converter": "Путь к ODA File Converter в сети запрещён",
+}
+
+
 def local_path_error(path, what="путь"):
     """Текст отказа, если путь сетевой; пустая строка — путь локальный.
 
@@ -225,7 +235,11 @@ def local_path_error(path, what="путь"):
         return ""
     if not is_network_path(path):
         return ""
-    return f"{what.capitalize()} в сети запрещён: {path}\n\n{LOCAL_ONLY_HINT}"
+    prefix = NETWORK_PATH_MESSAGES.get(what)
+    if not prefix:
+        prefix = f"{what} в сети запрещён"
+        prefix = prefix[:1].upper() + prefix[1:]
+    return f"{prefix}: {path}\n\n{LOCAL_ONLY_HINT}"
 
 
 def check_local_path(path, what="путь"):
@@ -3992,8 +4006,8 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
                 "целого числа 1..500, а штампы «Формат А…» в .sdd не "
                 "найдены — работать с файлом нельзя, иначе часть листов "
                 "потеряется.\n\n"
-                "Включите «Выбрать настройки вручную», укажите количество "
-                "листов и повторите запуск."
+                "Включите в «Настройках» расширенные настройки главного окна, "
+                "укажите количество листов вручную и повторите запуск."
             )
 
     log(f"Число листов: {sheet_count} (источник: {count_source})")
@@ -4303,7 +4317,7 @@ def run_gui():
             if hint_label is not None:
                 hint_label.config(
                     fg="#D9807A" if theme_state["dark"] else WIN11_DANGER)
-            hint_var.set("Укажите число листов числом от 1 до 500.")
+            hint_var.set("Укажите количество листов от 1 до 500.")
             return False, None
         hint_var.set("")
         return True, int(raw)
@@ -4707,6 +4721,7 @@ def run_gui():
             messagebox.showerror("Папка недоступна", err, parent=root)
             return False
         out_state["dir"] = folder
+        hint_var.set("")
         refresh_outdir_label()
         log(f"Папка результата: {folder} (до конца сеанса)")
         return True
@@ -4884,8 +4899,8 @@ def run_gui():
             if hint_label is not None:
                 hint_label.config(fg=subtext)
             if advanced_state["on"]:
-                hint_var.set("Для нескольких файлов указание количества листов "
-                             "и формата документа недоступны")
+                hint_var.set("Для нескольких файлов ручное указание количества "
+                             "листов и формата документа недоступно")
             else:
                 hint_var.set("")
             state, cursor = "disabled", "arrow"
@@ -5094,7 +5109,7 @@ def run_gui():
     dark_var = tk.BooleanVar(value=dark_default)
     theme_row = tk.Frame(card, bg=WIN11_CARD_BG)
     theme_row.place(relx=1.0, x=-16, y=12, anchor="ne")
-    theme_label = tk.Label(theme_row, text="Темная тема", font=FONT_BODY_SM,
+    theme_label = tk.Label(theme_row, text="Тёмная тема", font=FONT_BODY_SM,
                            bg=WIN11_CARD_BG, fg=WIN11_TEXT)
     theme_label.pack(side="left", padx=(0, 8))
     theme_toggle = tk.Canvas(theme_row, width=42, height=22,
@@ -5313,7 +5328,7 @@ def run_gui():
         check_row("Блокировать нажатия мыши во время конвертации",
                   dlg_block_mouse, None,
                   "Нажатия кнопок мыши не действуют (курсор двигается "
-                  "свободно, клавиатура активна). Аварийный останов "
+                  "свободно, клавиатура активна). Аварийная остановка "
                   "Ctrl+Alt+0 снимает блокировку. По умолчанию включено.")
         check_row("Расширенные настройки главного окна", dlg_advanced, None,
                   "Показывать на главном экране ручное указание количества "
@@ -5636,7 +5651,7 @@ def run_gui():
                          lambda: _open_folder(stats.get("out_dir", "")))
         b_open.config(width=16)
         b_open.pack(side="left", padx=(0, 10))
-        b_close = _button(btns, "Закрыть отчет",
+        b_close = _button(btns, "Закрыть отчёт",
                           lambda: close_report(win))
         b_close.config(width=16)
         b_close.pack(side="left", padx=(0, 10))
@@ -5756,7 +5771,7 @@ def run_gui():
 
         btns = tk.Frame(card_b, bg=WIN11_CARD_BG)
         btns.pack(side="bottom", pady=(10, 14))
-        b_close = _button(btns, "Закрыть отчет",
+        b_close = _button(btns, "Закрыть отчёт",
                           lambda: close_report(win))
         b_close.config(width=16)
         b_close.pack(side="left", padx=(0, 10))

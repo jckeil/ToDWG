@@ -159,6 +159,53 @@ def mainloop_stub(self, n=0):
         sum(1 for t, _ in net_errors if t == "Сетевые пути запрещены"),
         "|".join(t for t, _ in net_errors)))
 
+    # --- папка результата: после локального выбора предупреждение снимается ---
+    def visible_texts():
+        texts = []
+        for w in walk(self):
+            try:
+                if not w.winfo_ismapped():
+                    continue
+                text = str(w.cget("text"))
+                var = str(w.cget("textvariable"))
+                if var:
+                    text = (text + " " + str(self.getvar(var))).strip()
+                if text:
+                    texts.append(text)
+            except Exception:
+                pass
+        return texts
+
+    local_dir = tempfile.mkdtemp(prefix="ToDWG_gui_out_")
+    ask_values = [r"\\192.0.2.1\share", local_dir]
+    app.filedialog.askdirectory = lambda **kw: ask_values.pop(0)
+    app.messagebox.showerror = (
+        lambda title, text, **kw: net_errors.append((title, text)))
+    net_hint = False
+    local_hint_cleared = False
+    try:
+        for w in walk(self):
+            if (isinstance(w, tk.Checkbutton)
+                    and w.cget("text") == "Выбрать папку для готовых файлов"):
+                w.invoke()
+                break
+        self.update()
+        by_text = {b.cget("text"): b for b in buttons}
+        edit_btn = by_text.get("Изменить…")
+        if edit_btn is not None:
+            edit_btn.invoke()
+            self.update()
+            net_hint = any("запрещ" in t for t in visible_texts())
+            edit_btn.invoke()
+            self.update()
+            local_hint_cleared = not any(
+                "запрещ" in t for t in visible_texts())
+    finally:
+        app.filedialog.askdirectory = old_askdir
+        app.messagebox.showerror = old_showerror
+    report.append(("outdir_net_hint", net_hint))
+    report.append(("outdir_local_hint_cleared", local_hint_cleared))
+
     self.destroy()
 
 

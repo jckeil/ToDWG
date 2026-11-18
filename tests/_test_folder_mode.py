@@ -82,6 +82,16 @@ def main():
     check("is_network_path локальная папка", not m.is_network_path(root))
     bad = m.local_path_error(os.path.join(net, "a.sdd"), "файл")
     check("local_path_error отвергает сеть", "запрещ" in bad, bad)
+    check("local_path_error: текст для папки",
+          m.local_path_error(net, "папка").startswith(
+              "Доступ к сетевой папке запрещён:"),
+          bad)
+    check("local_path_error: текст для папки результата",
+          m.local_path_error(net, "папка результата").startswith(
+              "Выбор сетевой папки запрещён:"), bad)
+    check("local_path_error: текст для файла",
+          m.local_path_error(net, "файл").startswith("Файл в сети запрещён:"),
+          bad)
     check("local_path_error пропускает локальный путь",
           m.local_path_error(os.path.join(root, "a.sdd"), "файл") == "")
     check("check_local_path локальный -> ok", m.check_local_path(root)[0])
