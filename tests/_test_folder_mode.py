@@ -104,9 +104,14 @@ def main():
 
     # --- сжатие текста: диапазон, база, применение ----------------------
     check("clamp_compress: нижняя граница", m.clamp_compress(0.4) == 0.5)
-    check("clamp_compress: верхняя граница", m.clamp_compress(0.95) == 0.9)
+    check("clamp_compress: верхняя граница", m.clamp_compress(0.95) == 0.8)
     check("clamp_compress: строка", m.clamp_compress("0.75") == 0.75)
     check("clamp_compress: мусор", m.clamp_compress("x") == 0.7)
+    check("compress_is_risky: 0.50", m.compress_is_risky(0.5))
+    check("compress_is_risky: 0.55 — нет", not m.compress_is_risky(0.55))
+    check("compress_is_risky: 0.70 — нет", not m.compress_is_risky(0.7))
+    check("compress_is_risky: 0.75 — нет", not m.compress_is_risky(0.75))
+    check("compress_is_risky: 0.80", m.compress_is_risky(0.8))
     defaults = m.base_settings()
     check("base_settings: сжатие 0.7", defaults.get("compress") == 0.7)
     check("base_settings: PDF выключен", defaults.get("make_pdf") is False)

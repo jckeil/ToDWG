@@ -374,7 +374,7 @@ def update_setting(key, value):
 
 
 def clamp_compress(value):
-    """Сжатие текста в допустимом диапазоне 0.5..0.9 (по умолчанию 0.7)."""
+    """Сжатие текста в допустимом диапазоне 0.5..0.8 (по умолчанию 0.7)."""
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -382,6 +382,12 @@ def clamp_compress(value):
     if number != number:      # NaN
         return TEXT_COMPRESS
     return round(min(max(number, TEXT_COMPRESS_MIN), TEXT_COMPRESS_MAX), 2)
+
+
+def compress_is_risky(value):
+    """Слишком узкий (<0.55) или слишком широкий (>0.75) текст — риск."""
+    number = clamp_compress(value)
+    return number < 0.55 or number > 0.75
 
 
 def base_settings():
@@ -3189,7 +3195,7 @@ def dxf_to_dwg_convert(dxf_path, dwg_path=None, backend='auto',
 # --- 3.2. Сборка альбома ------------------------------------------------------
 TEXT_COMPRESS = 0.7
 TEXT_COMPRESS_MIN = 0.5
-TEXT_COMPRESS_MAX = 0.9
+TEXT_COMPRESS_MAX = 0.8
 TEXT_COMPRESS_STEP = 0.05
 
 # Слой с таблицами: текст, который стоит вплотную к линиям, сжимаем
@@ -3738,7 +3744,7 @@ def export_pdf(dwg_path, pdf_path, layout_names, paper_w, paper_h,
         import pythoncom
         import win32com.client
         from win32com.client import VARIANT
-        from pypdf import PdfReader, PdfWriter
+        from pypdf import PdfWriter
     except ImportError as e:
         log(f"PDF: не хватает библиотеки: {e}")
         return None
@@ -3847,9 +3853,9 @@ def export_pdf(dwg_path, pdf_path, layout_names, paper_w, paper_h,
         writer = PdfWriter()
         for part in parts:
             writer.append(part)
+        pages = len(writer.pages)
         with open(pdf_path, 'wb') as f:
             writer.write(f)
-        pages = len(PdfReader(pdf_path).pages)
         log(f"PDF готов: {pdf_path} "
             f"({os.path.getsize(pdf_path)} байт, страниц {pages})")
         return pdf_path
@@ -5643,10 +5649,18 @@ def run_gui():
         compress_var = tk.DoubleVar(value=current_compress)
         compress_value = tk.StringVar(
             value=f"{current_compress:.2f}".replace(".", ","))
+        compress_ui = {"label": None}
 
         def on_compress(value):
             number = clamp_compress(value)
             compress_value.set(f"{number:.2f}".replace(".", ","))
+            label = compress_ui["label"]
+            if label is not None:
+                if compress_is_risky(number):
+                    color = "#E6A3A0" if theme_state["dark"] else "#C05A55"
+                else:
+                    color = WIN11_ACCENT
+                label.config(fg=color)
 
         check_row("Задержки кликера (для медленных ПК)", delays_var,
                   sync_delays,
@@ -5770,22 +5784,26 @@ def run_gui():
         compress_head.pack(anchor="w", padx=40)
         tk.Label(compress_head, text="Сжатие:", font=FONT_BODY_SM,
                  bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(side="left")
-        tk.Label(compress_head, textvariable=compress_value,
-                 font=FONT_BODY_SM, bg=WIN11_CARD_BG,
-                 fg=WIN11_ACCENT).pack(side="left", padx=(6, 0))
+        compress_value_label = tk.Label(
+            compress_head, textvariable=compress_value,
+            font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_ACCENT)
+        compress_value_label.pack(side="left", padx=(6, 0))
+        compress_ui["label"] = compress_value_label
+        on_compress(current_compress)
         compress_q = tk.Label(compress_head, text="?", font=FONT_BODY_SM,
                               bg=WIN11_CARD_BG, fg=WIN11_ACCENT,
                               cursor="hand2")
         compress_q.pack(side="left", padx=(8, 0))
         compress_q.bind("<Button-1>", lambda e: show_help(
-            "Сжатие 0,50–0,90 (по умолчанию 0,70) — коэффициент ширины "
+            "Сжатие 0,50–0,80 (по умолчанию 0,70) — коэффициент ширины "
             "текста.\n\n"
             "Это не сжатие всех текстовых блоков. На слое «Таблицы» "
             "дополнительно проверяется пересечение с вертикальными линиями "
             "и подбирается минимально достаточный коэффициент (0,55–0,35).\n\n"
             "Слишком большая разница между текстом таблиц и остальных слоёв "
             "делает документ неопрятным — сильно уменьшать значение "
-            "не рекомендуется."))
+            "не рекомендуется. Значения ниже 0,55 и выше 0,75 "
+            "подсвечиваются красным — это риск."))
         compress_scale = tk.Scale(
             compress_area, from_=TEXT_COMPRESS_MIN, to=TEXT_COMPRESS_MAX,
             resolution=TEXT_COMPRESS_STEP, orient="horizontal", showvalue=0,
@@ -5800,8 +5818,8 @@ def run_gui():
                                   width=360, height=16)
         compress_names.pack_propagate(False)
         for text, x, anchor in (("0,50", 0, "nw"),
-                                ("0,70", 180, "n"),
-                                ("0,90", 360, "ne")):
+                                ("0,65", 180, "n"),
+                                ("0,80", 360, "ne")):
             tk.Label(compress_names, text=text, font=FONT_VERSION,
                      bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).place(
                 x=x, y=0, anchor=anchor)
