@@ -385,9 +385,9 @@ def clamp_compress(value):
 
 
 def compress_is_risky(value):
-    """Слишком узкий (<0.55) или слишком широкий (>0.75) текст — риск."""
+    """0,55 и ниже или 0,75 и выше — риск неопрятного текста."""
     number = clamp_compress(value)
-    return number < 0.55 or number > 0.75
+    return number <= COMPRESS_RISK_LOW or number >= COMPRESS_RISK_HIGH
 
 
 def base_settings():
@@ -3197,6 +3197,8 @@ TEXT_COMPRESS = 0.7
 TEXT_COMPRESS_MIN = 0.5
 TEXT_COMPRESS_MAX = 0.8
 TEXT_COMPRESS_STEP = 0.05
+COMPRESS_RISK_LOW = 0.55
+COMPRESS_RISK_HIGH = 0.75
 
 # Слой с таблицами: текст, который стоит вплотную к линиям, сжимаем
 # до минимально достаточного коэффициента из TABLE_COMPRESS_STEPS.
@@ -5649,10 +5651,11 @@ def run_gui():
         compress_var = tk.DoubleVar(value=current_compress)
         compress_value = tk.StringVar(
             value=f"{current_compress:.2f}".replace(".", ","))
-        compress_ui = {"label": None}
+        compress_ui = {"label": None, "draw": None}
 
         def on_compress(value):
             number = clamp_compress(value)
+            compress_var.set(number)
             compress_value.set(f"{number:.2f}".replace(".", ","))
             label = compress_ui["label"]
             if label is not None:
@@ -5661,6 +5664,9 @@ def run_gui():
                 else:
                     color = WIN11_ACCENT
                 label.config(fg=color)
+            draw = compress_ui["draw"]
+            if draw is not None:
+                draw()
 
         check_row("Задержки кликера (для медленных ПК)", delays_var,
                   sync_delays,
@@ -5802,18 +5808,70 @@ def run_gui():
             "и подбирается минимально достаточный коэффициент (0,55–0,35).\n\n"
             "Слишком большая разница между текстом таблиц и остальных слоёв "
             "делает документ неопрятным — сильно уменьшать значение "
-            "не рекомендуется. Значения ниже 0,55 и выше 0,75 "
+            "не рекомендуется. Значения 0,55 и ниже, 0,75 и выше "
             "подсвечиваются красным — это риск."))
-        compress_scale = tk.Scale(
-            compress_area, from_=TEXT_COMPRESS_MIN, to=TEXT_COMPRESS_MAX,
-            resolution=TEXT_COMPRESS_STEP, orient="horizontal", showvalue=0,
-            length=360, width=16, sliderlength=22,
-            bg="#E5E5E5", fg=WIN11_TEXT, troughcolor="#808080",
-            activebackground=WIN11_ACCENT, highlightthickness=1,
-            highlightbackground=WIN11_BORDER, bd=1,
-            sliderrelief="raised", variable=compress_var,
-            command=on_compress)
-        compress_scale.pack(anchor="w", padx=40)
+        compress_canvas = tk.Canvas(
+            compress_area, width=360, height=26, bg=WIN11_CARD_BG,
+            highlightthickness=1, highlightbackground=WIN11_BORDER,
+            bd=0, takefocus=1, cursor="hand2")
+        compress_canvas.pack(anchor="w", padx=40)
+
+        def compress_risk_color():
+            return "#B45453" if theme_state["dark"] else "#E07B7A"
+
+        def compress_safe_color():
+            return "#5C7F45" if theme_state["dark"] else "#8DBF6B"
+
+        def draw_compress_scale():
+            canvas = compress_canvas
+            width = canvas.winfo_width()
+            height = canvas.winfo_height()
+            if width <= 2:
+                return
+            canvas.delete("all")
+            span = TEXT_COMPRESS_MAX - TEXT_COMPRESS_MIN
+            low_x = int((COMPRESS_RISK_LOW - TEXT_COMPRESS_MIN)
+                        / span * width)
+            high_x = int((COMPRESS_RISK_HIGH - TEXT_COMPRESS_MIN)
+                         / span * width)
+            canvas.create_rectangle(0, 0, low_x, height,
+                                    fill=compress_risk_color(), outline="")
+            canvas.create_rectangle(low_x, 0, high_x, height,
+                                    fill=compress_safe_color(), outline="")
+            canvas.create_rectangle(high_x, 0, width, height,
+                                    fill=compress_risk_color(), outline="")
+            number = clamp_compress(compress_var.get())
+            pos = int((number - TEXT_COMPRESS_MIN) / span * width)
+            canvas.create_rectangle(max(1, pos - 6), 1,
+                                    min(width - 1, pos + 6), height - 1,
+                                    fill="#FFFFFF", outline="#3C3C3C")
+
+        def set_compress_from_x(x):
+            width = max(1, compress_canvas.winfo_width())
+            ratio = min(max(float(x) / width, 0.0), 1.0)
+            raw = TEXT_COMPRESS_MIN + ratio * (
+                TEXT_COMPRESS_MAX - TEXT_COMPRESS_MIN)
+            steps = round((raw - TEXT_COMPRESS_MIN) / TEXT_COMPRESS_STEP)
+            on_compress(TEXT_COMPRESS_MIN + steps * TEXT_COMPRESS_STEP)
+
+        def step_compress(delta):
+            steps = int(round((compress_var.get() - TEXT_COMPRESS_MIN)
+                              / TEXT_COMPRESS_STEP)) + delta
+            on_compress(TEXT_COMPRESS_MIN + steps * TEXT_COMPRESS_STEP)
+
+        def on_compress_click(event):
+            compress_canvas.focus_set()
+            set_compress_from_x(event.x)
+
+        compress_canvas.bind("<Button-1>", on_compress_click)
+        compress_canvas.bind("<B1-Motion>",
+                             lambda e: set_compress_from_x(e.x))
+        compress_canvas.bind("<Configure>",
+                             lambda e: draw_compress_scale())
+        compress_canvas.bind("<Left>", lambda e: step_compress(-1))
+        compress_canvas.bind("<Right>", lambda e: step_compress(1))
+        compress_ui["draw"] = draw_compress_scale
+        compress_canvas.after(0, draw_compress_scale)
         compress_names = tk.Frame(compress_area, bg=WIN11_CARD_BG,
                                   width=360, height=16)
         compress_names.pack_propagate(False)
