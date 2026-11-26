@@ -373,6 +373,32 @@ def update_setting(key, value):
         log(f"Не удалось сохранить настройку {key}: {e}")
 
 
+def clamp_compress(value):
+    """Сжатие текста в допустимом диапазоне 0.5..0.8 (по умолчанию 0.7)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return TEXT_COMPRESS
+    if number != number:      # NaN
+        return TEXT_COMPRESS
+    return round(min(max(number, TEXT_COMPRESS_MIN), TEXT_COMPRESS_MAX), 2)
+
+
+def base_settings():
+    """Базовые настройки для кнопки «По умолчанию» (тема не сбрасывается)."""
+    return {
+        "speed": 1,
+        "speed_drop_streak": 0,
+        "delays": True,
+        "save_log": False,
+        "delete_dxf": True,
+        "show_report": True,
+        "block_mouse": True,
+        "advanced_main": False,
+        "compress": TEXT_COMPRESS,
+    }
+
+
 def remember_dir(path):
     """Запоминает папку последнего выбранного файла (только локальную)."""
     try:
@@ -3160,7 +3186,10 @@ def dxf_to_dwg_convert(dxf_path, dwg_path=None, backend='auto',
 
 
 # --- 3.2. Сборка альбома ------------------------------------------------------
-TEXT_COMPRESS = 0.6
+TEXT_COMPRESS = 0.7
+TEXT_COMPRESS_MIN = 0.5
+TEXT_COMPRESS_MAX = 0.8
+TEXT_COMPRESS_STEP = 0.05
 
 # Слой с таблицами: текст, который стоит вплотную к линиям, сжимаем
 # до минимально достаточного коэффициента из TABLE_COMPRESS_STEPS.
@@ -3838,7 +3867,8 @@ def sources_deletable(input_dir, output_dir):
 
 
 def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
-              delete_sources=False, paper_w=PAPER_W, paper_h=PAPER_H):
+              delete_sources=False, paper_w=PAPER_W, paper_h=PAPER_H,
+              compress=TEXT_COMPRESS):
     """Собирает альбом из DXF: схемы в ряд в модели + layout на каждый лист.
 
     input_dir      — папка с DXF (имя файла содержит 'листN');
@@ -3883,6 +3913,7 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
 
     master = ezdxf.new('R2018', setup=True)
     log(f"Формат листа: {paper_w:g}×{paper_h:g} мм")
+    log(f"Сжатие текста: {compress:.2f}")
 
     # Дефолтный Layout1 удалить СРАЗУ нельзя: ezdxf запрещает удалять последний
     # paperspace-layout. Поэтому чистим дефолтные листы после создания
@@ -3905,7 +3936,7 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
         n_font = set_font(src)
         log(f"[{i}] {file_name}: шрифт {FONT_FILE} установлен "
             f"для {n_font} стилей")
-        n_txt, txt_stats = compress_texts(src)
+        n_txt, txt_stats = compress_texts(src, factor=compress)
         log(f"[{i}] {file_name}: сжато текстовых сущностей: {n_txt}; "
             f"по коэффициентам: {dict(sorted(txt_stats.items()))}")
 
@@ -4148,7 +4179,7 @@ def report_kind_for(results):
 
 def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
                  paper_w=PAPER_W, paper_h=PAPER_H, out_dir=None,
-                 save_log=True):
+                 save_log=True, compress=TEXT_COMPRESS):
     """Полный цикл: открыть .sdd, сохранить листы, собрать DWG, отдать отчёт."""
     check_stop()
     _OWNED_SCHEMAGEE["opened"] = False
@@ -4305,7 +4336,8 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     t_merge = time.time()
     merge = merge_all(input_dir=run_dir, output_dir=run_dir, name=name,
                       delete_sources=delete_dxf,
-                      paper_w=paper_w, paper_h=paper_h)
+                      paper_w=paper_w, paper_h=paper_h,
+                      compress=compress)
     merge_time = time.time() - t_merge
 
     if save_log:
@@ -5538,8 +5570,8 @@ def run_gui():
         win.configure(bg=WIN11_BG)
         apply_icon(win)
         win.transient(root)
-        _center(win, 580, 620)
-        card_s = _card(win, 520, 560)
+        _center(win, 580, 700)
+        card_s = _card(win, 520, 640)
 
         tk.Label(card_s, text="Настройки",
                  font=("Segoe UI Variable Display", 15, "bold"),
@@ -5586,6 +5618,16 @@ def run_gui():
         dlg_block_mouse = tk.BooleanVar(value=mouse_block_var.get())
         dlg_advanced = tk.BooleanVar(
             value=bool(load_settings().get("advanced_main", False)))
+
+        current_compress = clamp_compress(
+            load_settings().get("compress", TEXT_COMPRESS))
+        compress_var = tk.DoubleVar(value=current_compress)
+        compress_value = tk.StringVar(
+            value=f"{current_compress:.2f}".replace(".", ","))
+
+        def on_compress(value):
+            number = clamp_compress(value)
+            compress_value.set(f"{number:.2f}".replace(".", ","))
 
         check_row("Задержки кликера (для медленных ПК)", delays_var,
                   sync_delays,
@@ -5700,6 +5742,57 @@ def run_gui():
                   "Показывать на главном экране ручное указание количества "
                   "листов и выбор формата. По умолчанию выключено.")
 
+        tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
+            fill="x", padx=26, pady=(8, 4))
+
+        compress_area = tk.Frame(card_s, bg=WIN11_CARD_BG)
+        compress_area.pack(anchor="w", fill="x")
+        compress_head = tk.Frame(compress_area, bg=WIN11_CARD_BG)
+        compress_head.pack(anchor="w", padx=40)
+        tk.Label(compress_head, text="Сжатие:", font=FONT_BODY_SM,
+                 bg=WIN11_CARD_BG, fg=WIN11_TEXT).pack(side="left")
+        tk.Label(compress_head, textvariable=compress_value,
+                 font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+                 fg=WIN11_ACCENT).pack(side="left", padx=(6, 0))
+        compress_scale = tk.Scale(
+            compress_area, from_=TEXT_COMPRESS_MIN, to=TEXT_COMPRESS_MAX,
+            resolution=TEXT_COMPRESS_STEP, orient="horizontal", showvalue=0,
+            length=360, width=16, sliderlength=22,
+            bg="#E5E5E5", fg=WIN11_TEXT, troughcolor="#808080",
+            activebackground=WIN11_ACCENT, highlightthickness=1,
+            highlightbackground=WIN11_BORDER, bd=1,
+            sliderrelief="raised", variable=compress_var,
+            command=on_compress)
+        compress_scale.pack(anchor="w", padx=40)
+        compress_names = tk.Frame(compress_area, bg=WIN11_CARD_BG,
+                                  width=360, height=16)
+        compress_names.pack_propagate(False)
+        for text, x, anchor in (("0,50", 0, "nw"),
+                                ("0,65", 180, "n"),
+                                ("0,80", 360, "ne")):
+            tk.Label(compress_names, text=text, font=FONT_VERSION,
+                     bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).place(
+                x=x, y=0, anchor=anchor)
+        compress_names.pack(anchor="w", padx=40, pady=(0, 2))
+        tk.Label(compress_area,
+                 text="Ширина текста: меньше — уже. По умолчанию 0,70.",
+                 font=FONT_VERSION, bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT,
+                 anchor="w").pack(anchor="w", padx=40)
+
+        tk.Frame(card_s, bg=WIN11_BORDER, height=1).pack(
+            fill="x", padx=26, pady=(8, 4))
+
+        default_row = tk.Frame(card_s, bg=WIN11_CARD_BG)
+        default_row.pack(anchor="w", fill="x", padx=40)
+        tk.Label(default_row, text="Базовые настройки:", font=FONT_BODY_SM,
+                 bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(side="left")
+        tk.Button(default_row, text="По умолчанию",
+                  command=lambda: reset_to_defaults(),
+                  font=FONT_BODY_SM, bg="#E5E5E5", fg=WIN11_TEXT,
+                  activebackground="#D6D6D6", activeforeground=WIN11_TEXT,
+                  relief="flat", bd=0, highlightthickness=0, cursor="hand2",
+                  padx=10, pady=3).pack(side="left", padx=(8, 0))
+
         def close_settings():
             settings_win["win"] = None
             try:
@@ -5726,6 +5819,7 @@ def run_gui():
                 "show_report": bool(dlg_report.get()),
                 "block_mouse": bool(dlg_block_mouse.get()),
                 "advanced_main": bool(dlg_advanced.get()),
+                "compress": clamp_compress(compress_var.get()),
             })
             save_settings(data)
             try:
@@ -5742,8 +5836,49 @@ def run_gui():
                 set_logging_enabled(save_log_on)
             log(f"Настройки сохранены: скорость «{SPEED_LEVELS[level]}», "
                 f"задержки {'вкл' if on_delays else 'выкл'}, "
+                f"сжатие {clamp_compress(compress_var.get()):.2f}, "
                 f"журнал {'вкл' if save_log_on else 'выкл'}.")
             close_settings()
+
+        def reset_to_defaults():
+            """Перезаписывает файл настроек базовыми значениями."""
+            if not messagebox.askyesno(
+                    "По умолчанию",
+                    "Записать базовые настройки?\n"
+                    "Текущие настройки будут заменены.",
+                    parent=win):
+                return
+            data = base_settings()
+            # Тема — оформление окна, её кнопка сброса не меняет.
+            data["theme"] = "dark" if theme_state["dark"] else "light"
+            save_settings(data)
+
+            speed_var.set(data["speed"])
+            on_speed(data["speed"])
+            delays_var.set(data["delays"])
+            apply_delays_visuals(data["delays"])
+            dlg_save_log.set(data["save_log"])
+            dlg_delete.set(data["delete_dxf"])
+            dlg_report.set(data["show_report"])
+            dlg_block_mouse.set(data["block_mouse"])
+            dlg_advanced.set(data["advanced_main"])
+            compress_var.set(data["compress"])
+            on_compress(data["compress"])
+
+            # Применяем сразу, чтобы текущий сеанс совпадал с файлом.
+            save_log_var.set(data["save_log"])
+            delete_var.set(data["delete_dxf"])
+            report_var.set(data["show_report"])
+            mouse_block_var.set(data["block_mouse"])
+            set_clicker_speed(data["speed"])
+            set_clicker_delays(data["delays"])
+            if bool(_LOG_ENABLED) != data["save_log"]:
+                set_logging_enabled(data["save_log"])
+            try:
+                apply_advanced_main(data["advanced_main"])
+            except Exception:
+                pass
+            log("Настройки сброшены на базовые (файл настроек перезаписан).")
 
         win.protocol("WM_DELETE_WINDOW", close_settings)
 
@@ -6386,7 +6521,7 @@ def run_gui():
         return True
 
     def worker(paths, manual_count, delete_dxf, paper_w, paper_h, out_dir,
-               save_log):
+               save_log, compress):
         _PIPELINE_STATE["running"] = True
         results = []
         try:
@@ -6414,7 +6549,8 @@ def run_gui():
                     stats = run_pipeline(path, manual_count, inner,
                                          delete_dxf=delete_dxf,
                                          paper_w=paper_w, paper_h=paper_h,
-                                         out_dir=out_dir, save_log=save_log)
+                                         out_dir=out_dir, save_log=save_log,
+                                         compress=compress)
                     results.append(stats)
                 except TaskStopped:
                     raise
@@ -6463,14 +6599,17 @@ def run_gui():
                 else f"Файлов: {len(paths)}. Начинаем…")
         show_progress(text)
         paper_w, paper_h = paper_dimensions()
+        compress = clamp_compress(
+            load_settings().get("compress", TEXT_COMPRESS))
         threading.Thread(target=worker,
                          args=(paths, manual_count, delete_var.get(),
                                paper_w, paper_h, out_state["dir"],
-                               save_log_var.get()),
+                               save_log_var.get(), compress),
                          daemon=True).start()
 
     def folder_worker(paths, manual_folder=False, result_dir=None,
-                      manual_count=None, paper_w=PAPER_W, paper_h=PAPER_H):
+                      manual_count=None, paper_w=PAPER_W, paper_h=PAPER_H,
+                      compress=TEXT_COMPRESS):
         """Обрабатывает список .sdd: каждый .dwg — рядом со своим исходником
         (или в выбранной общей папке, если включена галочка)."""
         _PIPELINE_STATE["running"] = True
@@ -6509,7 +6648,8 @@ def run_gui():
                                          delete_dxf=delete_var.get(),
                                          paper_w=paper_w, paper_h=paper_h,
                                          out_dir=work_root,
-                                         save_log=save_log_var.get())
+                                         save_log=save_log_var.get(),
+                                         compress=compress)
                     dest = relocate_result(stats, target_dir)
                     if dest:
                         stats["target"] = dest
@@ -6566,10 +6706,12 @@ def run_gui():
         hint_var.set("")
         root.withdraw()
         show_progress(f"Файлов: {len(paths)}. Начинаем…")
+        compress = clamp_compress(
+            load_settings().get("compress", TEXT_COMPRESS))
         threading.Thread(
             target=folder_worker,
             args=(paths, manual_folder, out_state["dir"],
-                  manual_count, paper_w, paper_h),
+                  manual_count, paper_w, paper_h, compress),
             daemon=True).start()
 
     start_stop_hotkey()

@@ -101,6 +101,47 @@ def main():
           m.pick_mono_style(["Autodesk-MONO.stb"]) == "Autodesk-MONO.stb")
     check("pick_mono_style: без моно",
           m.pick_mono_style(["acad.ctb", "Grayscale.ctb"]) is None)
+
+    # --- сжатие текста: диапазон, база, применение ----------------------
+    check("clamp_compress: нижняя граница", m.clamp_compress(0.4) == 0.5)
+    check("clamp_compress: верхняя граница", m.clamp_compress(0.9) == 0.8)
+    check("clamp_compress: строка", m.clamp_compress("0.75") == 0.75)
+    check("clamp_compress: мусор", m.clamp_compress("x") == 0.7)
+    defaults = m.base_settings()
+    check("base_settings: сжатие 0.7", defaults.get("compress") == 0.7)
+    check("base_settings: без last_dir", "last_dir" not in defaults)
+
+    text_doc = m.ezdxf.new()
+    text = text_doc.modelspace().add_text(
+        "Текст", dxfattribs={"height": 2.5, "width": 1.0})
+    n_text, text_stats = m.compress_texts(text_doc, factor=0.7)
+    check("compress_texts: применён 0.7",
+          abs(text.dxf.width - 0.7) < 1e-6, text.dxf.width)
+    check("compress_texts: статистика 0.7",
+          n_text == 1 and text_stats.get(0.7) == 1, text_stats)
+
+    cfg_path = os.path.join(root, "settings_test.json")
+    saved_settings_path = m.settings_path
+    m.settings_path = lambda: cfg_path
+    try:
+        m.save_settings({"compress": 0.75, "theme": "light"})
+        cfg = m.load_settings()
+        check("конфиг: сжатие сохранено", cfg.get("compress") == 0.75, cfg)
+    finally:
+        m.settings_path = saved_settings_path
+
+    src_one = tempfile.mkdtemp(prefix="ToDWG_src1_")
+    out_one = tempfile.mkdtemp(prefix="ToDWG_out1_")
+    one_doc = m.ezdxf.new()
+    one_doc.modelspace().add_text(
+        "T", dxfattribs={"height": 2.5, "width": 1.0})
+    one_doc.saveas(os.path.join(src_one, "doc_лист1.dxf"))
+    merged = m.merge_all(src_one, out_one, name="c1", make_dwg=False,
+                         compress=0.65)
+    merged_doc = m.ezdxf.readfile(merged["file"])
+    merged_text = list(merged_doc.modelspace().query("TEXT"))[0]
+    check("merge_all: сжатие 0.65 доходит до текста",
+          abs(merged_text.dxf.width - 0.65) < 1e-6, merged_text.dxf.width)
     check("sources_deletable: одна папка",
           m.sources_deletable(root, root + os.sep))
     check("sources_deletable: разные папки",

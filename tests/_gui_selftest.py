@@ -232,6 +232,29 @@ def mainloop_stub(self, n=0):
             help_win.destroy()
     report.append(("help_window", help_opened, help_size_ok, help_text_ok))
 
+    # --- настройки: «Сжатие» и кнопка «По умолчанию» --------------------
+    by_text = {b.cget("text"): b for b in buttons}
+    settings_btn = by_text.get("Настройки")
+    settings_ok = False
+    if settings_btn is not None:
+        settings_btn.invoke()
+        self.update()
+        tops = [w for w in self.winfo_children()
+                if isinstance(w, tk.Toplevel)]
+        if tops:
+            sw = tops[-1]
+            labels = [str(w.cget("text")) for w in walk(sw)
+                      if isinstance(w, tk.Label)]
+            btn_texts = [str(w.cget("text")) for w in walk(sw)
+                         if isinstance(w, tk.Button)]
+            scales = [w for w in walk(sw) if isinstance(w, tk.Scale)]
+            settings_ok = ("Сжатие:" in labels
+                           and "По умолчанию" in btn_texts
+                           and len(scales) >= 2
+                           and sw.winfo_height() <= self.winfo_height())
+            sw.destroy()
+    report.append(("settings_compress", settings_ok))
+
     self.destroy()
 
 
