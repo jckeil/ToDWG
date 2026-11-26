@@ -104,11 +104,12 @@ def main():
 
     # --- сжатие текста: диапазон, база, применение ----------------------
     check("clamp_compress: нижняя граница", m.clamp_compress(0.4) == 0.5)
-    check("clamp_compress: верхняя граница", m.clamp_compress(0.9) == 0.8)
+    check("clamp_compress: верхняя граница", m.clamp_compress(0.95) == 0.9)
     check("clamp_compress: строка", m.clamp_compress("0.75") == 0.75)
     check("clamp_compress: мусор", m.clamp_compress("x") == 0.7)
     defaults = m.base_settings()
     check("base_settings: сжатие 0.7", defaults.get("compress") == 0.7)
+    check("base_settings: PDF включён", defaults.get("make_pdf") is True)
     check("base_settings: без last_dir", "last_dir" not in defaults)
 
     text_doc = m.ezdxf.new()
@@ -137,11 +138,35 @@ def main():
         "T", dxfattribs={"height": 2.5, "width": 1.0})
     one_doc.saveas(os.path.join(src_one, "doc_лист1.dxf"))
     merged = m.merge_all(src_one, out_one, name="c1", make_dwg=False,
-                         compress=0.65)
+                         compress=0.65, make_pdf=False)
     merged_doc = m.ezdxf.readfile(merged["file"])
     merged_text = list(merged_doc.modelspace().query("TEXT"))[0]
     check("merge_all: сжатие 0.65 доходит до текста",
           abs(merged_text.dxf.width - 0.65) < 1e-6, merged_text.dxf.width)
+
+    src_pdf = tempfile.mkdtemp(prefix="ToDWG_srcp_")
+    out_pdf = tempfile.mkdtemp(prefix="ToDWG_outp_")
+    pdf_doc = m.ezdxf.new()
+    pdf_doc.modelspace().add_text(
+        "T", dxfattribs={"height": 2.5, "width": 1.0})
+    pdf_doc.saveas(os.path.join(src_pdf, "doc_лист1.dxf"))
+    fake_dwg = os.path.join(out_pdf, "fake.dwg")
+    with open(fake_dwg, "wb") as f:
+        f.write(b"DWG")
+    pdf_calls = []
+    saved_export_dwg, saved_export_pdf = m.export_dwg, m.export_pdf
+    m.export_dwg = lambda *a, **kw: fake_dwg
+    m.export_pdf = lambda *a, **kw: pdf_calls.append(a) or fake_dwg
+    try:
+        res_off = m.merge_all(src_pdf, out_pdf, name="off", make_pdf=False)
+        check("merge_all: PDF не вызывается, если галочка off",
+              not pdf_calls and res_off.get("pdf") == "", res_off.get("pdf"))
+        res_on = m.merge_all(src_pdf, out_pdf, name="on", make_pdf=True)
+        check("merge_all: PDF вызывается, если галочка on",
+              len(pdf_calls) == 1 and res_on.get("pdf") == fake_dwg,
+              res_on.get("pdf"))
+    finally:
+        m.export_dwg, m.export_pdf = saved_export_dwg, saved_export_pdf
     check("sources_deletable: одна папка",
           m.sources_deletable(root, root + os.sep))
     check("sources_deletable: разные папки",

@@ -255,6 +255,26 @@ def mainloop_stub(self, n=0):
             sw.destroy()
     report.append(("settings_compress", settings_ok))
 
+    # --- главное окно: галочка PDF --------------------------------------
+    pdf_widget = next((w for w in walk(self)
+                       if isinstance(w, tk.Checkbutton)
+                       and w.cget("text") == "Создавать файл .pdf"), None)
+    report.append(("pdf_checkbox", pdf_widget is not None))
+
+    pdf_saved = []
+    old_update = app.update_setting
+    app.update_setting = lambda key, value: pdf_saved.append((key, value))
+    try:
+        if pdf_widget is not None:
+            pdf_widget.invoke()
+            pdf_widget.invoke()
+    finally:
+        app.update_setting = old_update
+    report.append(("pdf_toggle",
+                   ("make_pdf", False) in pdf_saved
+                   and ("make_pdf", True) in pdf_saved,
+                   str(pdf_saved)))
+
     self.destroy()
 
 

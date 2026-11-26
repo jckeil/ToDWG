@@ -374,7 +374,7 @@ def update_setting(key, value):
 
 
 def clamp_compress(value):
-    """Сжатие текста в допустимом диапазоне 0.5..0.8 (по умолчанию 0.7)."""
+    """Сжатие текста в допустимом диапазоне 0.5..0.9 (по умолчанию 0.7)."""
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -396,6 +396,7 @@ def base_settings():
         "block_mouse": True,
         "advanced_main": False,
         "compress": TEXT_COMPRESS,
+        "make_pdf": True,
     }
 
 
@@ -3188,7 +3189,7 @@ def dxf_to_dwg_convert(dxf_path, dwg_path=None, backend='auto',
 # --- 3.2. Сборка альбома ------------------------------------------------------
 TEXT_COMPRESS = 0.7
 TEXT_COMPRESS_MIN = 0.5
-TEXT_COMPRESS_MAX = 0.8
+TEXT_COMPRESS_MAX = 0.9
 TEXT_COMPRESS_STEP = 0.05
 
 # Слой с таблицами: текст, который стоит вплотную к линиям, сжимаем
@@ -3798,6 +3799,7 @@ def export_pdf(dwg_path, pdf_path, layout_names, paper_w, paper_h,
             log("PDF: монохромный стиль не найден — публикация цветная")
         log(f"PDF: плоттер {device}, лист {media}, "
             f"страниц {len(layout_names)}")
+        log(f"PDF: источник — объединённый DWG: {dwg_path}")
 
         total = len(layout_names)
         for index, name in enumerate(layout_names, 1):
@@ -3840,7 +3842,7 @@ def export_pdf(dwg_path, pdf_path, layout_names, paper_w, paper_h,
                 raise RuntimeError(
                     f"Публикация «{name}» не создала PDF за {timeout} с")
             parts.append(part)
-            log(f"PDF: {index}/{total} — {name}")
+            log(f"PDF: страница {index}/{total} — {name}")
 
         writer = PdfWriter()
         for part in parts:
@@ -3868,7 +3870,7 @@ def sources_deletable(input_dir, output_dir):
 
 def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
               delete_sources=False, paper_w=PAPER_W, paper_h=PAPER_H,
-              compress=TEXT_COMPRESS):
+              compress=TEXT_COMPRESS, make_pdf=True):
     """Собирает альбом из DXF: схемы в ряд в модели + layout на каждый лист.
 
     input_dir      — папка с DXF (имя файла содержит 'листN');
@@ -4016,7 +4018,7 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
         log(f"DWG не запрашивался, оставлен DXF: {output_dxf}")
 
     pdf = None
-    if dwg:
+    if dwg and make_pdf:
         names = [it.get('layout') for it in placed if it.get('layout')]
         try:
             pdf = export_pdf(
@@ -4027,6 +4029,8 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
             raise
         except Exception as e:
             log(f"ВНИМАНИЕ: PDF не создан: {e}")
+    elif dwg:
+        log("PDF не создавался: галочка «Создавать файл .pdf» выключена.")
 
     if dwg and delete_sources:
         if not sources_deletable(input_dir, output_dir):
@@ -4179,7 +4183,7 @@ def report_kind_for(results):
 
 def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
                  paper_w=PAPER_W, paper_h=PAPER_H, out_dir=None,
-                 save_log=True, compress=TEXT_COMPRESS):
+                 save_log=True, compress=TEXT_COMPRESS, make_pdf=True):
     """Полный цикл: открыть .sdd, сохранить листы, собрать DWG, отдать отчёт."""
     check_stop()
     _OWNED_SCHEMAGEE["opened"] = False
@@ -4337,7 +4341,7 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     merge = merge_all(input_dir=run_dir, output_dir=run_dir, name=name,
                       delete_sources=delete_dxf,
                       paper_w=paper_w, paper_h=paper_h,
-                      compress=compress)
+                      compress=compress, make_pdf=make_pdf)
     merge_time = time.time() - t_merge
 
     if save_log:
@@ -4382,7 +4386,7 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     if target.lower().endswith(".dxf"):
         notes.append("DWG не создан (нет ODA File Converter / AutoCAD) — "
                      "оставлен DXF.")
-    elif not pdf:
+    elif not pdf and make_pdf:
         notes.append("PDF не создан — нужен AutoCAD (подробности в журнале).")
 
     stats = {
@@ -4675,6 +4679,7 @@ def run_gui():
     delete_var = tk.BooleanVar(value=bool(ui_settings.get("delete_dxf", True)))
     report_var = tk.BooleanVar(value=bool(ui_settings.get("show_report", True)))
     mouse_block_var = tk.BooleanVar(value=bool(ui_settings.get("block_mouse", True)))
+    pdf_var = tk.BooleanVar(value=bool(ui_settings.get("make_pdf", True)))
     try:
         set_clicker_speed(int(ui_settings.get("speed", 1)))
     except Exception:
@@ -5160,9 +5165,23 @@ def run_gui():
         """Галочка только включает строку результата; папку выбирают «Изменить…»."""
         sync_outdir_row()
 
+    def on_pdf_toggle():
+        update_setting("make_pdf", bool(pdf_var.get()))
+
+    # Галочка PDF — перед папкой результата.
+    pdf_row = tk.Frame(card, bg=WIN11_CARD_BG)
+    pdf_row.pack(anchor="w", padx=90, pady=(10, 0), fill="x")
+    pdf_check = tk.Checkbutton(
+        pdf_row, text="Создавать файл .pdf", variable=pdf_var,
+        command=on_pdf_toggle, font=FONT_BODY_SM, bg=WIN11_CARD_BG,
+        fg=WIN11_TEXT, activebackground=WIN11_CARD_BG,
+        activeforeground=WIN11_TEXT, selectcolor=WIN11_CARD_BG,
+        bd=0, highlightthickness=0, cursor="hand2")
+    pdf_check.pack(side="left")
+
     # Галочка — выше строки «Папка результата», выровнена с другими галочками.
     manual_folder_row = tk.Frame(card, bg=WIN11_CARD_BG)
-    manual_folder_row.pack(anchor="w", padx=90, pady=(10, 0), fill="x")
+    manual_folder_row.pack(anchor="w", padx=90, pady=(6, 0), fill="x")
     manual_folder_check = tk.Checkbutton(
         manual_folder_row, text="Выбрать папку для готовых файлов",
         variable=manual_folder_var, command=on_manual_folder_toggle,
@@ -5754,6 +5773,19 @@ def run_gui():
         tk.Label(compress_head, textvariable=compress_value,
                  font=FONT_BODY_SM, bg=WIN11_CARD_BG,
                  fg=WIN11_ACCENT).pack(side="left", padx=(6, 0))
+        compress_q = tk.Label(compress_head, text="?", font=FONT_BODY_SM,
+                              bg=WIN11_CARD_BG, fg=WIN11_ACCENT,
+                              cursor="hand2")
+        compress_q.pack(side="left", padx=(8, 0))
+        compress_q.bind("<Button-1>", lambda e: show_help(
+            "Сжатие 0,50–0,90 (по умолчанию 0,70) — коэффициент ширины "
+            "текста.\n\n"
+            "Это не просто уменьшение: только на слое «Таблицы» "
+            "дополнительно проверяется пересечение с вертикальными линиями "
+            "и подбирается минимально достаточный коэффициент (0,55–0,35).\n\n"
+            "Слишком большая разница между текстом таблиц и остальных слоёв "
+            "делает документ неопрятным — сильно уменьшать значение "
+            "не рекомендуется."))
         compress_scale = tk.Scale(
             compress_area, from_=TEXT_COMPRESS_MIN, to=TEXT_COMPRESS_MAX,
             resolution=TEXT_COMPRESS_STEP, orient="horizontal", showvalue=0,
@@ -5768,8 +5800,8 @@ def run_gui():
                                   width=360, height=16)
         compress_names.pack_propagate(False)
         for text, x, anchor in (("0,50", 0, "nw"),
-                                ("0,65", 180, "n"),
-                                ("0,80", 360, "ne")):
+                                ("0,70", 180, "n"),
+                                ("0,90", 360, "ne")):
             tk.Label(compress_names, text=text, font=FONT_VERSION,
                      bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).place(
                 x=x, y=0, anchor=anchor)
@@ -5864,6 +5896,7 @@ def run_gui():
             dlg_advanced.set(data["advanced_main"])
             compress_var.set(data["compress"])
             on_compress(data["compress"])
+            pdf_var.set(data["make_pdf"])
 
             # Применяем сразу, чтобы текущий сеанс совпадал с файлом.
             save_log_var.set(data["save_log"])
@@ -6521,7 +6554,7 @@ def run_gui():
         return True
 
     def worker(paths, manual_count, delete_dxf, paper_w, paper_h, out_dir,
-               save_log, compress):
+               save_log, compress, make_pdf):
         _PIPELINE_STATE["running"] = True
         results = []
         try:
@@ -6550,7 +6583,7 @@ def run_gui():
                                          delete_dxf=delete_dxf,
                                          paper_w=paper_w, paper_h=paper_h,
                                          out_dir=out_dir, save_log=save_log,
-                                         compress=compress)
+                                         compress=compress, make_pdf=make_pdf)
                     results.append(stats)
                 except TaskStopped:
                     raise
@@ -6604,12 +6637,13 @@ def run_gui():
         threading.Thread(target=worker,
                          args=(paths, manual_count, delete_var.get(),
                                paper_w, paper_h, out_state["dir"],
-                               save_log_var.get(), compress),
+                               save_log_var.get(), compress,
+                               bool(pdf_var.get())),
                          daemon=True).start()
 
     def folder_worker(paths, manual_folder=False, result_dir=None,
                       manual_count=None, paper_w=PAPER_W, paper_h=PAPER_H,
-                      compress=TEXT_COMPRESS):
+                      compress=TEXT_COMPRESS, make_pdf=True):
         """Обрабатывает список .sdd: каждый .dwg — рядом со своим исходником
         (или в выбранной общей папке, если включена галочка)."""
         _PIPELINE_STATE["running"] = True
@@ -6649,7 +6683,8 @@ def run_gui():
                                          paper_w=paper_w, paper_h=paper_h,
                                          out_dir=work_root,
                                          save_log=save_log_var.get(),
-                                         compress=compress)
+                                         compress=compress,
+                                         make_pdf=make_pdf)
                     dest = relocate_result(stats, target_dir)
                     if dest:
                         stats["target"] = dest
@@ -6711,7 +6746,8 @@ def run_gui():
         threading.Thread(
             target=folder_worker,
             args=(paths, manual_folder, out_state["dir"],
-                  manual_count, paper_w, paper_h, compress),
+                  manual_count, paper_w, paper_h, compress,
+                  bool(pdf_var.get())),
             daemon=True).start()
 
     start_stop_hotkey()
