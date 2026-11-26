@@ -70,7 +70,7 @@ from ezdxf.xref import ConflictPolicy
 # =============================================================================
 
 APP_NAME = "ToDWG"
-APP_VERSION = "1.8"
+APP_VERSION = "1.9"
 APP_STAGE = ""                     # убрать, когда версия станет публичной
 APP_DISPLAY_VERSION = f"v{APP_VERSION}" + (f" ({APP_STAGE})" if APP_STAGE else "")   # "v1.8"
 APP_FULL_TITLE = f"{APP_NAME} {APP_DISPLAY_VERSION} — Schemagee → DXF → DWG"
@@ -3615,6 +3615,205 @@ def export_dwg(dxf_path, dwg_path, keep_dxf=False, attempts=3, delay=5.0):
     return path
 
 
+# --- PDF: публикация листов альбома (только через AutoCAD) -------------------
+
+def pick_pdf_device(devices):
+    """Имя PDF-плоттера из списка устройств AutoCAD."""
+    names = [str(d) for d in devices]
+    for name in names:
+        if name.lower() == 'dwg to pdf.pc3':
+            return name
+    for name in names:
+        low = name.lower()
+        if 'pdf' in low and low.endswith('.pc3'):
+            return name
+    for name in names:
+        if 'pdf' in name.lower():
+            return name
+    return None
+
+
+def pick_pdf_media(media_names, paper_w, paper_h, tol=0.6):
+    """Размер листа под (paper_w, paper_h); full bleed — в приоритете.
+
+    Имена формата: ISO_full_bleed_A2_(594.00_x_420.00_MM). Full bleed
+    (нулевые поля) нужен, чтобы в PDF помещалась вся страница целиком.
+    """
+    candidates = []
+    for name in media_names:
+        match = re.search(r'([\d.]+)_x_([\d.]+)_MM', str(name))
+        if not match:
+            continue
+        mw, mh = float(match.group(1)), float(match.group(2))
+        if abs(mw - paper_w) <= tol and abs(mh - paper_h) <= tol:
+            low = str(name).lower()
+            rank = 0 if 'full_bleed' in low else (
+                2 if 'expand' in low else 1)
+            candidates.append((rank, len(str(name)), str(name)))
+    if not candidates:
+        return None
+    candidates.sort()
+    return candidates[0][2]
+
+
+def _wait_for_file(path, timeout, stable_checks=3, interval=0.4):
+    """Ждёт, пока файл появится и перестанет расти."""
+    deadline = time.time() + timeout
+    last = -1
+    stable = 0
+    while time.time() < deadline:
+        if os.path.isfile(path):
+            size = os.path.getsize(path)
+            if size > 0 and size == last:
+                stable += 1
+                if stable >= stable_checks:
+                    return True
+            else:
+                stable = 0
+                last = size
+        time.sleep(interval)
+    return os.path.isfile(path) and os.path.getsize(path) > 0
+
+
+def export_pdf(dwg_path, pdf_path, layout_names, paper_w, paper_h,
+               timeout=180):
+    """Публикует layouts DWG в один многостраничный PDF через AutoCAD.
+
+    ODA File Converter PDF не умеет: без AutoCAD возвращает None.
+    Страницы — full bleed 1:1, поэтому видна вся страница листа.
+    """
+    if not layout_names:
+        log("PDF: в альбоме нет листов — публикация пропущена.")
+        return None
+    if not has_acad():
+        log("PDF: AutoCAD не найден — PDF не создаётся (нужен AutoCAD).")
+        return None
+    try:
+        import pythoncom
+        import win32com.client
+        from win32com.client import VARIANT
+        from pypdf import PdfReader, PdfWriter
+    except ImportError as e:
+        log(f"PDF: не хватает библиотеки: {e}")
+        return None
+
+    dwg_path = os.path.abspath(dwg_path)
+    pdf_path = os.path.abspath(pdf_path)
+    ok, err = check_local_path(pdf_path, "папка результата")
+    if not ok:
+        raise RuntimeError(err)
+    if not os.path.isfile(dwg_path):
+        log(f"PDF: нет DWG: {dwg_path}")
+        return None
+    if os.path.isfile(pdf_path):
+        try:
+            os.remove(pdf_path)
+        except OSError as e:
+            raise RuntimeError(f"Не удалось перезаписать {pdf_path}: {e}")
+
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
+
+    parts_dir = make_work_dir("pdf_")
+    parts = []
+    doc = None
+    try:
+        acad = win32com.client.Dispatch('AutoCAD.Application')
+        try:
+            acad.Visible = False
+        except Exception:
+            pass
+        doc = acad.Documents.Open(dwg_path, True)
+        time.sleep(1.0)
+
+        first = None
+        for name in layout_names:
+            try:
+                first = doc.Layouts.Item(name)
+                break
+            except Exception:
+                continue
+        if first is None:
+            raise RuntimeError("В DWG не найдены layouts альбома")
+
+        first.RefreshPlotDeviceInfo()
+        device = pick_pdf_device(first.GetPlotDeviceNames())
+        if not device:
+            raise RuntimeError("Не найден PDF-плоттер AutoCAD (DWG To PDF.pc3)")
+        first.ConfigName = device
+        first.RefreshPlotDeviceInfo()
+        media = pick_pdf_media(first.GetCanonicalMediaNames(),
+                               paper_w, paper_h)
+        if not media:
+            raise RuntimeError(
+                f"В плоттере {device} нет листа {paper_w:g}×{paper_h:g} мм")
+        log(f"PDF: плоттер {device}, лист {media}, "
+            f"страниц {len(layout_names)}")
+
+        total = len(layout_names)
+        for index, name in enumerate(layout_names, 1):
+            check_stop()
+            layout = doc.Layouts.Item(name)
+            doc.ActiveLayout = layout
+            layout.ConfigName = device
+            layout.CanonicalMediaName = media
+            layout.PaperUnits = 1
+            layout.PlotType = 5            # acLayout: печатать лист как есть
+            layout.UseStandardScale = False
+            layout.SetCustomScale(1.0, 1.0)
+            layout.PlotRotation = 0
+            layout.PlotWithPlotStyles = True
+            layout.PlotWithLineweights = True
+            layout.PlotHidden = False
+
+            part = os.path.join(parts_dir, f"p{index:03d}.pdf")
+            if os.path.isfile(part):
+                os.remove(part)
+            last = None
+            for attempt in range(1, 4):
+                try:
+                    doc.Plot.SetLayoutsToPlot(
+                        VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_BSTR,
+                                [name]))
+                    doc.Plot.PlotToFile(part)
+                    last = None
+                    break
+                except Exception as e:
+                    last = e
+                    log(f"PDF: {name}, попытка {attempt}/3: {e}")
+                    time.sleep(1.5)
+            if last is not None:
+                raise RuntimeError(
+                    f"Не удалось опубликовать «{name}»: {last}") from last
+            if not _wait_for_file(part, timeout):
+                raise RuntimeError(
+                    f"Публикация «{name}» не создала PDF за {timeout} с")
+            parts.append(part)
+            log(f"PDF: {index}/{total} — {name}")
+
+        writer = PdfWriter()
+        for part in parts:
+            writer.append(part)
+        with open(pdf_path, 'wb') as f:
+            writer.write(f)
+        pages = len(PdfReader(pdf_path).pages)
+        log(f"PDF готов: {pdf_path} "
+            f"({os.path.getsize(pdf_path)} байт, страниц {pages})")
+        return pdf_path
+    finally:
+        if doc is not None:
+            try:
+                doc.Close(False)
+            except Exception as e:
+                log(f"PDF: не удалось закрыть документ: {e}")
+        shutil.rmtree(parts_dir, ignore_errors=True)
+
+
+def sources_deletable(input_dir, output_dir):
+    """Удалять исходные DXF можно только в папке результата этого прогона."""
+    return (os.path.normcase(os.path.abspath(input_dir))
+            == os.path.normcase(os.path.abspath(output_dir)))
+
+
 def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
               delete_sources=False, paper_w=PAPER_W, paper_h=PAPER_H):
     """Собирает альбом из DXF: схемы в ряд в модели + layout на каждый лист.
@@ -3738,7 +3937,7 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
                                    paper_w=paper_w, paper_h=paper_h)
         if layout is not None:
             log(f"  '{layout_name}'  ←  {file_name}")
-        item['layout'] = layout_name
+            item['layout'] = layout_name
 
     # Чистим дефолтные листы (Layout1) — теперь, когда листы альбома уже есть.
     removed_layouts = _delete_extra_layouts(master)
@@ -3756,26 +3955,46 @@ def merge_all(input_dir, output_dir, name=None, make_dwg=True, keep_dxf=False,
     with open(output_json, 'w', encoding='utf-8') as f:
         json.dump(placed, f, ensure_ascii=False, indent=2)
 
-    # --- Этап 3: итоговый файл DWG ---
+    # --- Этап 3: итоговый файл DWG и PDF ---
     dwg = export_dwg(output_dxf, output_dwg, keep_dxf=keep_dxf) \
         if make_dwg else None
     if not make_dwg:
         log(f"DWG не запрашивался, оставлен DXF: {output_dxf}")
 
+    pdf = None
+    if dwg:
+        names = [it.get('layout') for it in placed if it.get('layout')]
+        try:
+            pdf = export_pdf(
+                dwg, os.path.splitext(dwg)[0] + '.pdf',
+                names, paper_w, paper_h,
+            )
+        except TaskStopped:
+            raise
+        except Exception as e:
+            log(f"ВНИМАНИЕ: PDF не создан: {e}")
+
     if dwg and delete_sources:
-        removed = 0
-        for path in files:
-            try:
-                os.remove(path)
-                removed += 1
-            except OSError as e:
-                log(f"ВНИМАНИЕ: не удалось удалить {path}: {e}")
-        log(f"Удалено исходных DXF: {removed} из {len(files)}")
+        if not sources_deletable(input_dir, output_dir):
+            # Исходная папка пользователя — не трогаем: удалять можно только
+            # временные DXF, которые лежат в папке результата этого прогона.
+            log("ВНИМАНИЕ: удаление исходных DXF отменено — входная папка "
+                "не совпадает с папкой результата.")
+        else:
+            removed = 0
+            for path in files:
+                try:
+                    os.remove(path)
+                    removed += 1
+                except OSError as e:
+                    log(f"ВНИМАНИЕ: не удалось удалить {path}: {e}")
+            log(f"Удалено исходных DXF: {removed} из {len(files)}")
 
     result = dwg or output_dxf
     log(f"Готово: схем {len(placed)}, layouts {len(placed)}, "
         f"ошибок {len(errors)}, файл {result} ({os.path.getsize(result)} байт)")
-    return {'placed': placed, 'errors': errors, 'file': result, 'name': name}
+    return {'placed': placed, 'errors': errors, 'file': result, 'name': name,
+            'pdf': pdf or ''}
 
 
 # =============================================================================
@@ -3857,6 +4076,25 @@ def relocate_result(stats, target_dir):
             log(f"Не удалось скопировать результат: {e2}")
             return None
     log(f"Результат рядом с исходником: {dest}")
+
+    pdf = stats.get("pdf")
+    if pdf and os.path.isfile(pdf):
+        pdf_dest = unique_path(target_dir,
+                               os.path.splitext(os.path.basename(dest))[0],
+                               ".pdf")
+        try:
+            shutil.move(pdf, pdf_dest)
+        except Exception as e:
+            log(f"Не удалось перенести PDF: {e}")
+            try:
+                shutil.copy2(pdf, pdf_dest)
+            except Exception as e2:
+                log(f"Не удалось скопировать PDF: {e2}")
+                pdf_dest = ""
+        if pdf_dest:
+            stats["pdf"] = pdf_dest
+            stats["pdf_size"] = os.path.getsize(pdf_dest)
+            log(f"PDF рядом с исходником: {pdf_dest}")
     return dest
 
 
@@ -4040,7 +4278,7 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
         )
     check_stop()
 
-    emit("progress", "Собираем альбом и конвертируем в DWG…")
+    emit("progress", "Собираем альбом, конвертируем в DWG и публикуем PDF…")
     t_merge = time.time()
     merge = merge_all(input_dir=run_dir, output_dir=run_dir, name=name,
                       delete_sources=delete_dxf,
@@ -4069,6 +4307,7 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
             log(f"Не удалось удалить {_service}: {e}")
 
     target = merge["file"]
+    pdf = merge.get("pdf") or ""
     placed = len(merge["placed"])
     errors = len(merge["errors"])
 
@@ -4088,6 +4327,8 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
     if target.lower().endswith(".dxf"):
         notes.append("DWG не создан (нет ODA File Converter / AutoCAD) — "
                      "оставлен DXF.")
+    elif not pdf:
+        notes.append("PDF не создан — нужен AutoCAD (подробности в журнале).")
 
     stats = {
         "source": source,
@@ -4103,6 +4344,9 @@ def run_pipeline(file_path, manual_count, emit, delete_dxf=True,
         "error_files": error_files,
         "target": target,
         "target_size": os.path.getsize(target) if os.path.isfile(target) else 0,
+        "pdf": pdf,
+        "pdf_size": (os.path.getsize(pdf)
+                     if pdf and os.path.isfile(pdf) else 0),
         "out_dir": run_dir,
         "notes": notes,
         "version": APP_VERSION,
@@ -4125,6 +4369,9 @@ def print_report(stats):
     log(f"  Схем          : {stats['placed']}")
     log(f"  Ошибок        : {stats['errors']}")
     log(f"  Результат     : {stats['target']} ({stats['target_size']} байт)")
+    if stats.get("pdf"):
+        log(f"  PDF           : {stats['pdf']} "
+            f"({stats.get('pdf_size', 0)} байт)")
     for note in stats.get("notes") or []:
         log(f"  ! {note}")
     log("=" * 62)
@@ -4165,12 +4412,15 @@ def run_headless(opts):
         return 1
 
     error_files = [n for n, _ in merge["errors"]]
+    pdf = merge.get("pdf") or ""
     notes = []
     if error_files:
         notes.append("Не прочитаны DXF: " + ", ".join(error_files) + ".")
     if len(merge["placed"]) < len(files):
         notes.append(f"В альбом вошло {len(merge['placed'])} "
                      f"из {len(files)} листов.")
+    if merge["file"].lower().endswith(".dwg") and not pdf:
+        notes.append("PDF не создан — нужен AutoCAD.")
 
     stats = {
         "source": files[0],
@@ -4187,6 +4437,9 @@ def run_headless(opts):
         "target": merge["file"],
         "target_size": os.path.getsize(merge["file"])
         if os.path.isfile(merge["file"]) else 0,
+        "pdf": pdf,
+        "pdf_size": (os.path.getsize(pdf)
+                     if pdf and os.path.isfile(pdf) else 0),
         "out_dir": run_dir,
         "notes": notes,
         "version": APP_VERSION,
@@ -5817,8 +6070,13 @@ def run_gui():
                  bg=WIN11_CARD_BG, fg=WIN11_SUBTEXT).pack(
             anchor="w", padx=28, pady=(8, 1))
         size_kb = float(stats.get("target_size", 0)) / 1024.0
+        result_text = (f"{stats.get('target', '—')}  ({size_kb:.0f} КБ)")
+        pdf_path = str(stats.get("pdf") or "")
+        if pdf_path:
+            pdf_kb = float(stats.get("pdf_size", 0)) / 1024.0
+            result_text += f"\nPDF: {pdf_path}  ({pdf_kb:.0f} КБ)"
         tk.Label(card_s,
-                 text=f"{stats.get('target', '—')}  ({size_kb:.0f} КБ)",
+                 text=result_text,
                  font=FONT_BODY_SM, bg=WIN11_CARD_BG, fg=WIN11_TEXT,
                  wraplength=580, justify="left").pack(anchor="w", padx=28)
 

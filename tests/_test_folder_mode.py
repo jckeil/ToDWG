@@ -60,6 +60,44 @@ def main():
     check("relocate_result суффикс (2)", os.path.basename(dest2) == "doc (2).dwg",
           dest2)
 
+    with open(os.path.join(work, "doc.dwg"), "wb") as f:
+        f.write(b"DWG3")
+    produced_pdf = os.path.join(work, "doc.pdf")
+    with open(produced_pdf, "wb") as f:
+        f.write(b"%PDF-1.4")
+    stats3 = {"target": os.path.join(work, "doc.dwg"), "pdf": produced_pdf}
+    dest3 = m.relocate_result(stats3, root)
+    check("relocate_result перенёс PDF вместе с DWG",
+          bool(dest3) and os.path.basename(dest3) == "doc (3).dwg"
+          and stats3.get("pdf") == os.path.join(root, "doc (3).pdf")
+          and os.path.isfile(stats3["pdf"]), stats3.get("pdf"))
+
+    # --- PDF: выбор плоттера и формата листа ----------------------------
+    media = ["ISO_A2_(420.00_x_594.00_MM)",
+             "ISO_full_bleed_A2_(594.00_x_420.00_MM)",
+             "ISO_A2_(594.00_x_420.00_MM)",
+             "ANSI_A_(11.00_x_8.50_Inches)"]
+    check("pick_pdf_media: full bleed A2 в приоритете",
+          m.pick_pdf_media(media, 594.0, 420.0)
+          == "ISO_full_bleed_A2_(594.00_x_420.00_MM)")
+    check("pick_pdf_media: A3 нет", m.pick_pdf_media(media, 420.0, 297.0) is None)
+    check("pick_pdf_media: A4",
+          m.pick_pdf_media(["ISO_full_bleed_A4_(297.00_x_210.00_MM)"],
+                           297.0, 210.0)
+          == "ISO_full_bleed_A4_(297.00_x_210.00_MM)")
+    check("pick_pdf_device: DWG To PDF",
+          m.pick_pdf_device(["Adobe PDF", "DWG To PDF.pc3"])
+          == "DWG To PDF.pc3")
+    check("pick_pdf_device: pc3 в приоритете",
+          m.pick_pdf_device(["Adobe PDF",
+                             "AutoCAD PDF (General Documentation).pc3"])
+          == "AutoCAD PDF (General Documentation).pc3")
+    check("pick_pdf_device: нет PDF", m.pick_pdf_device(["PDF24"]) == "PDF24")
+    check("sources_deletable: одна папка",
+          m.sources_deletable(root, root + os.sep))
+    check("sources_deletable: разные папки",
+          not m.sources_deletable(root, os.path.join(root, "sub")))
+
     # --- probe_path: локальная папка доступна --------------------------
     ok, err = m.probe_path(root, need_write=True)
     check("probe_path локальная папка ok", ok, err)

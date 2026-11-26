@@ -45,7 +45,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ToDWG 1.8',
+    name='ToDWG 1.9',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
