@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-"""Проверки новых функций v1.8: папка (задача 3) и проверка доступности (задача 2)."""
+"""Проверки функций v1.8–v1.9: папка, доступность, сеть, PDF, сжатие."""
 import os
 import subprocess
 import sys
@@ -391,7 +391,7 @@ def main():
         check("справка без: " + phrase, phrase not in help_text)
 
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    txt_path = os.path.join(root_dir, "Справка ToDWG 1.8.txt")
+    txt_path = os.path.join(root_dir, "Справка ToDWG 1.9.txt")
     try:
         with open(txt_path, encoding="utf-8") as f:
             txt_help = f.read()

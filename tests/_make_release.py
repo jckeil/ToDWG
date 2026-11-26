@@ -5,7 +5,7 @@
 тело релиза — из CHANGELOG.md.
 
 Использование:
-    python tests\\_make_release.py v1.6 [путь\\к\\ToDWG_v1.6.exe]
+    python tests\\_make_release.py v1.9 [путь\\к\\ToDWG 1.9.exe]
 """
 import json
 import os
@@ -22,7 +22,7 @@ CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
 
 
 def default_asset(version):
-    """Путь к exe версии: dist\\ToDWG 1.8.exe (старое имя — с подчёркиванием)."""
+    """Путь к exe версии: dist\\ToDWG 1.9.exe (старое имя — с подчёркиванием)."""
     candidates = [
         os.path.join(ROOT, "dist", f"ToDWG {version.lstrip('v')}.exe"),
         os.path.join(ROOT, "dist", f"ToDWG_{version}.exe"),
@@ -127,20 +127,27 @@ def main():
                   f"{e.read().decode('utf-8', 'replace')[:300]}")
             return 1
 
-    if asset and os.path.isfile(asset):
-        have = {a.get("name") for a in release.get("assets", [])}
-        if os.path.basename(asset) in have:
-            print(f"  {os.path.basename(asset)}: уже загружен")
-        else:
-            try:
-                uploaded = upload_asset(release["upload_url"], asset)
-                print(f"  загружено: {uploaded.get('name')} "
-                      f"({uploaded.get('size')} байт)")
-            except urllib.error.HTTPError as e:
-                print(f"  ошибка загрузки {e.code}: "
-                      f"{e.read().decode('utf-8', 'replace')[:300]}")
-    else:
-        print("  exe не найден — релиз без файла")
+    assets = [asset]
+    news = os.path.join(ROOT, "dist",
+                        f"Что нового ToDWG {version.lstrip('v')}.txt")
+    if os.path.isfile(news):
+        assets.append(news)
+    have = {a.get("name") for a in release.get("assets", [])}
+    for path in assets:
+        if not path or not os.path.isfile(path):
+            print(f"  {os.path.basename(str(path))}: не найден — пропуск")
+            continue
+        name = os.path.basename(path)
+        if name in have:
+            print(f"  {name}: уже загружен")
+            continue
+        try:
+            uploaded = upload_asset(release["upload_url"], path)
+            print(f"  загружено: {uploaded.get('name')} "
+                  f"({uploaded.get('size')} байт)")
+        except urllib.error.HTTPError as e:
+            print(f"  ошибка загрузки {name} {e.code}: "
+                  f"{e.read().decode('utf-8', 'replace')[:300]}")
     return 0
 
 
