@@ -396,7 +396,7 @@ def base_settings():
         "block_mouse": True,
         "advanced_main": False,
         "compress": TEXT_COMPRESS,
-        "make_pdf": True,
+        "make_pdf": False,
     }
 
 
@@ -4679,7 +4679,7 @@ def run_gui():
     delete_var = tk.BooleanVar(value=bool(ui_settings.get("delete_dxf", True)))
     report_var = tk.BooleanVar(value=bool(ui_settings.get("show_report", True)))
     mouse_block_var = tk.BooleanVar(value=bool(ui_settings.get("block_mouse", True)))
-    pdf_var = tk.BooleanVar(value=bool(ui_settings.get("make_pdf", True)))
+    pdf_var = tk.BooleanVar(value=bool(ui_settings.get("make_pdf", False)))
     try:
         set_clicker_speed(int(ui_settings.get("speed", 1)))
     except Exception:
@@ -5780,7 +5780,7 @@ def run_gui():
         compress_q.bind("<Button-1>", lambda e: show_help(
             "Сжатие 0,50–0,90 (по умолчанию 0,70) — коэффициент ширины "
             "текста.\n\n"
-            "Это не просто уменьшение: только на слое «Таблицы» "
+            "Это не сжатие всех текстовых блоков. На слое «Таблицы» "
             "дополнительно проверяется пересечение с вертикальными линиями "
             "и подбирается минимально достаточный коэффициент (0,55–0,35).\n\n"
             "Слишком большая разница между текстом таблиц и остальных слоёв "

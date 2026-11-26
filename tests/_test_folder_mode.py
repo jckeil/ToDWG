@@ -109,7 +109,7 @@ def main():
     check("clamp_compress: мусор", m.clamp_compress("x") == 0.7)
     defaults = m.base_settings()
     check("base_settings: сжатие 0.7", defaults.get("compress") == 0.7)
-    check("base_settings: PDF включён", defaults.get("make_pdf") is True)
+    check("base_settings: PDF выключен", defaults.get("make_pdf") is False)
     check("base_settings: без last_dir", "last_dir" not in defaults)
 
     text_doc = m.ezdxf.new()
