@@ -247,10 +247,10 @@ def mainloop_stub(self, n=0):
                       if isinstance(w, tk.Label)]
             btn_texts = [str(w.cget("text")) for w in walk(sw)
                          if isinstance(w, tk.Button)]
-            canvases = [w for w in walk(sw) if isinstance(w, tk.Canvas)]
+            scales = [w for w in walk(sw) if isinstance(w, tk.Scale)]
             settings_ok = ("Сжатие:" in labels
                            and "По умолчанию" in btn_texts
-                           and len(canvases) >= 1
+                           and len(scales) >= 2
                            and sw.winfo_height() <= self.winfo_height())
             sw.destroy()
     report.append(("settings_compress", settings_ok))
