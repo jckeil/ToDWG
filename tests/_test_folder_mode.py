@@ -93,6 +93,14 @@ def main():
                              "AutoCAD PDF (General Documentation).pc3"])
           == "AutoCAD PDF (General Documentation).pc3")
     check("pick_pdf_device: нет PDF", m.pick_pdf_device(["PDF24"]) == "PDF24")
+    styles = ["acad.ctb", "Grayscale.ctb", "monochrome.ctb",
+              "Autodesk-MONO.stb"]
+    check("pick_mono_style: monochrome.ctb",
+          m.pick_mono_style(styles) == "monochrome.ctb")
+    check("pick_mono_style: mono-фолбэк",
+          m.pick_mono_style(["Autodesk-MONO.stb"]) == "Autodesk-MONO.stb")
+    check("pick_mono_style: без моно",
+          m.pick_mono_style(["acad.ctb", "Grayscale.ctb"]) is None)
     check("sources_deletable: одна папка",
           m.sources_deletable(root, root + os.sep))
     check("sources_deletable: разные папки",

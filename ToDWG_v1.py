@@ -3656,6 +3656,22 @@ def pick_pdf_media(media_names, paper_w, paper_h, tol=0.6):
     return candidates[0][2]
 
 
+def pick_mono_style(names):
+    """Монохромная таблица стилей печати (monochrome.ctb) из списка AutoCAD."""
+    values = [str(n) for n in names]
+    for name in values:
+        if name.lower() == 'monochrome.ctb':
+            return name
+    for name in values:
+        low = name.lower()
+        if 'mono' in low and low.endswith('.ctb'):
+            return name
+    for name in values:
+        if 'mono' in name.lower():
+            return name
+    return None
+
+
 def _wait_for_file(path, timeout, stable_checks=3, interval=0.4):
     """Ждёт, пока файл появится и перестанет расти."""
     deadline = time.time() + timeout
@@ -3746,6 +3762,11 @@ def export_pdf(dwg_path, pdf_path, layout_names, paper_w, paper_h,
         if not media:
             raise RuntimeError(
                 f"В плоттере {device} нет листа {paper_w:g}×{paper_h:g} мм")
+        style = pick_mono_style(first.GetPlotStyleTableNames())
+        if style:
+            log(f"PDF: стиль печати {style} (монохром)")
+        else:
+            log("PDF: монохромный стиль не найден — публикация цветная")
         log(f"PDF: плоттер {device}, лист {media}, "
             f"страниц {len(layout_names)}")
 
@@ -3761,6 +3782,8 @@ def export_pdf(dwg_path, pdf_path, layout_names, paper_w, paper_h,
             layout.UseStandardScale = False
             layout.SetCustomScale(1.0, 1.0)
             layout.PlotRotation = 0
+            if style:
+                layout.StyleSheet = style     # монохромная печать листа
             layout.PlotWithPlotStyles = True
             layout.PlotWithLineweights = True
             layout.PlotHidden = False
